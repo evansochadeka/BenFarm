@@ -1,7 +1,8 @@
 import os
-from datetime import timedelta  # Add this import
+from datetime import timedelta
 from dotenv import load_dotenv
 
+# Load environment variables from .env file
 load_dotenv()
 
 class Config:
@@ -17,17 +18,25 @@ class Config:
     MAX_REPLY_LENGTH = 2000
     
     # Security
-    SECRET_KEY = os.getenv('SECRET_KEY', os.getenv('SESSION_SECRET', 'dev-secret-key-change-in-production'))
+    SECRET_KEY = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
     
-    # Database - Use PostgreSQL on Render, SQLite locally
-    database_url = os.getenv('DATABASE_URL', 'sqlite:///database.db')
+    # ============ DATABASE CONFIGURATION - POSTGRESQL READY ============
+    # Get database URL from environment variable
+    database_url = os.getenv('DATABASE_URL', 'sqlite:///app.db')
     
-    # Fix PostgreSQL URL format for Render/Railway
+    # CRITICAL FIX: Convert postgres:// to postgresql:// (Render uses postgres:// but SQLAlchemy needs postgresql://)
     if database_url and database_url.startswith('postgres://'):
         database_url = database_url.replace('postgres://', 'postgresql://', 1)
     
     SQLALCHEMY_DATABASE_URI = database_url
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    
+    # Connection pooling for PostgreSQL (helps with free tier)
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        'pool_size': 5,
+        'pool_recycle': 300,
+        'pool_pre_ping': True,
+    }
     
     # File uploads
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024
@@ -39,24 +48,17 @@ class Config:
         os.makedirs(UPLOAD_FOLDER)
     
     # API Keys
-    OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
-    GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
-    PERENUAL_API_KEY = os.getenv('PERENUAL_API_KEY')
-    OPENWEATHER_API_KEY = os.getenv('OPENWEATHER_API_KEY')
-    PLANTID_API_KEY = os.getenv('PLANTID_API_KEY')
-    WEGLOT_API_KEY = os.getenv('WEGLOT_API_KEY')
     COHERE_API_KEY = os.getenv('COHERE_API_KEY')
+    OPENWEATHER_API_KEY = os.getenv('OPENWEATHER_API_KEY')
     
-    # Cohere specific configuration
+    # Cohere configuration
     COHERE_MODEL = 'c4ai-aya-expanse-8b'
     COHERE_TEMPERATURE = 0.3
     COHERE_MAX_TOKENS = 800
     
-    # Flask configuration
+    # Session configuration
     PREFERRED_URL_SCHEME = 'https'
-    
-    # Session and cookie configuration
     SESSION_COOKIE_SECURE = True
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = 'Lax'
-    PERMANENT_SESSION_LIFETIME = timedelta(days=7)  # Now works with import
+    PERMANENT_SESSION_LIFETIME = timedelta(days=7)
