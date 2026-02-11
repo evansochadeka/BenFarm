@@ -87,28 +87,64 @@
                                         </a>
                                     </li>
                                     {% endfor %}
+                                    <li><hr class="dropdown-divider"></li>
+                                    <li><a class="dropdown-item" href="{{ url_for('community.notifications') }}">View All Notifications</a></li>
                                 {% else %}
-                                    <li><span class="dropdown-item">No new notifications</span></li>
+                                    <li><span class="dropdown-item text-muted">No new notifications</span></li>
                                 {% endif %}
                             </ul>
                         </li>
                         
                         <li class="nav-item dropdown">
-                            <a class="nav-link dropdown-toggle" href="#" id="userDropdown" role="button" 
+                            <a class="nav-link dropdown-toggle d-flex align-items-center" href="#" id="userDropdown" role="button" 
                                data-bs-toggle="dropdown" aria-expanded="false" aria-label="User menu">
                                 {% if current_user.profile_picture %}
                                 <img src="{{ url_for('static', filename='uploads/' + current_user.profile_picture) }}" 
-                                     alt="{{ current_user.full_name }}'s profile picture" class="rounded-circle" style="width: 30px; height: 30px;">
+                                     alt="{{ current_user.full_name }}'s profile picture" 
+                                     class="profile-pic-nav"
+                                     onerror="this.onerror=null; this.src='{{ url_for('static', filename='uploads/default_avatar.png') }}';">
                                 {% else %}
-                                <i class="fas fa-user-circle" aria-hidden="true"></i>
+                                <img src="{{ url_for('static', filename='uploads/default_avatar.png') }}" 
+                                     alt="Default profile picture" 
+                                     class="profile-pic-nav">
                                 {% endif %}
-                                {{ current_user.full_name }}
+                                <span>{{ current_user.full_name.split()[0] }}</span>
                             </a>
                             <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
-                                <li><a class="dropdown-item" href="#"><i class="fas fa-user" aria-hidden="true"></i> Profile</a></li>
-                                <li><a class="dropdown-item" href="#"><i class="fas fa-cog" aria-hidden="true"></i> Settings</a></li>
+                                <li><span class="dropdown-item-text text-muted small">Logged in as</span></li>
+                                <li><span class="dropdown-item-text fw-bold">{{ current_user.full_name }}</span></li>
+                                <li><span class="dropdown-item-text text-success small">{{ current_user.user_type|replace('_', ' ')|title }}</span></li>
                                 <li><hr class="dropdown-divider"></li>
-                                <li><a class="dropdown-item" href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt" aria-hidden="true"></i> Logout</a></li>
+                                <li>
+                                    <a class="dropdown-item" href="#" onclick="alert('Profile page coming soon!'); return false;">
+                                        <i class="fas fa-user" aria-hidden="true"></i> My Profile
+                                    </a>
+                                </li>
+                                <li>
+                                    <a class="dropdown-item" href="#" onclick="alert('Settings page coming soon!'); return false;">
+                                        <i class="fas fa-cog" aria-hidden="true"></i> Settings
+                                    </a>
+                                </li>
+                                {% if current_user|is_admin %}
+                                <li>
+                                    <a class="dropdown-item text-warning" href="{{ url_for('admin.dashboard') }}">
+                                        <i class="fas fa-shield-alt" aria-hidden="true"></i> Admin Panel
+                                    </a>
+                                </li>
+                                {% endif %}
+                                {% if current_user|is_super_admin %}
+                                <li>
+                                    <a class="dropdown-item text-warning fw-bold" href="{{ url_for('admin.super_dashboard') }}">
+                                        <i class="fas fa-crown" aria-hidden="true"></i> Super Admin
+                                    </a>
+                                </li>
+                                {% endif %}
+                                <li><hr class="dropdown-divider"></li>
+                                <li>
+                                    <a class="dropdown-item text-danger" href="{{ url_for('logout') }}">
+                                        <i class="fas fa-sign-out-alt" aria-hidden="true"></i> Logout
+                                    </a>
+                                </li>
                             </ul>
                         </li>
                     {% else %}
@@ -128,3 +164,46 @@
         </div>
     </nav>
 </header>
+
+<style>
+.profile-pic-nav {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    object-fit: cover;
+    margin-right: 8px;
+    border: 2px solid rgba(255,255,255,0.5);
+    transition: border 0.2s;
+}
+.profile-pic-nav:hover {
+    border: 2px solid white;
+}
+.navbar-brand {
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+.dropdown-menu {
+    box-shadow: 0 0.5rem 1rem rgba(0,0,0,0.15);
+    border: none;
+    border-radius: 0.5rem;
+}
+.dropdown-item {
+    padding: 0.5rem 1.5rem;
+    transition: all 0.2s;
+}
+.dropdown-item:hover {
+    background-color: #f8f9fa;
+    transform: translateX(5px);
+}
+.nav-link {
+    font-weight: 500;
+    transition: all 0.2s;
+}
+.nav-link:hover {
+    transform: translateY(-2px);
+}
+.badge {
+    font-size: 0.6rem;
+    padding: 0.25rem 0.4rem;
+}
+</style>

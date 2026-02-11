@@ -1,0 +1,154 @@
+{% extends "components/base.html" %}
+
+{% block title %}Manage Admins - Super Admin{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h1 class="display-5 mb-0">
+                <i class="fas fa-user-shield text-success"></i> Manage Administrators
+            </h1>
+            <p class="text-muted">Create and manage admin accounts</p>
+        </div>
+    </div>
+
+    <!-- Create New Admin Form -->
+    <div class="card shadow mb-4">
+        <div class="card-header bg-success text-white">
+            <h5 class="mb-0"><i class="fas fa-plus-circle"></i> Create New Admin</h5>
+        </div>
+        <div class="card-body">
+            <form method="POST" action="{{ url_for('admin.create_admin') }}">
+                <div class="row">
+                    <div class="col-md-3 mb-3">
+                        <label for="full_name" class="form-label">Full Name</label>
+                        <input type="text" class="form-control" id="full_name" name="full_name" required>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <label for="email" class="form-label">Email</label>
+                        <input type="email" class="form-control" id="email" name="email" required>
+                    </div>
+                    <div class="col-md-2 mb-3">
+                        <label for="password" class="form-label">Password</label>
+                        <input type="password" class="form-control" id="password" name="password" required>
+                    </div>
+                    <div class="col-md-2 mb-3">
+                        <label for="is_super_admin" class="form-label">Role</label>
+                        <div class="form-check mt-2">
+                            <input class="form-check-input" type="checkbox" id="is_super_admin" name="is_super_admin">
+                            <label class="form-check-label" for="is_super_admin">
+                                Super Admin
+                            </label>
+                        </div>
+                    </div>
+                    <div class="col-md-2 mb-3 d-flex align-items-end">
+                        <button type="submit" class="btn btn-success w-100">
+                            <i class="fas fa-user-plus"></i> Create Admin
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Admins List -->
+    <div class="card shadow">
+        <div class="card-header bg-primary text-white">
+            <h5 class="mb-0"><i class="fas fa-list"></i> Administrator Accounts</h5>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover" id="adminsTable">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Name</th>
+                            <th>Email</th>
+                            <th>Role</th>
+                            <th>Created</th>
+                            <th>Last Login</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for admin in admins %}
+                        <tr>
+                            <td>{{ admin.id }}</td>
+                            <td>{{ admin.full_name }}</td>
+                            <td>{{ admin.email }}</td>
+                            <td>
+                                {% if admin.is_super_admin %}
+                                <span class="badge bg-warning">Super Admin</span>
+                                {% else %}
+                                <span class="badge bg-secondary">Admin</span>
+                                {% endif %}
+                                {% if admin.email == 'benedict431@gmail.com' %}
+                                <span class="badge bg-danger">Primary</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ admin.created_at.strftime('%Y-%m-%d') if admin.created_at else 'N/A' }}</td>
+                            <td>{{ admin.last_login.strftime('%Y-%m-%d %H:%M') if admin.last_login else 'Never' }}</td>
+                            <td>
+                                <div class="btn-group" role="group">
+                                    {% if admin.email != 'benedict431@gmail.com' and admin.email != current_user.email %}
+                                    <button onclick="toggleSuperAdmin({{ admin.id }})" class="btn btn-sm btn-{{ 'warning' if admin.is_super_admin else 'secondary' }}" title="{{ 'Remove super admin' if admin.is_super_admin else 'Make super admin' }}">
+                                        <i class="fas fa-crown"></i>
+                                    </button>
+                                    <button onclick="deleteAdmin({{ admin.id }})" class="btn btn-sm btn-danger" title="Delete">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                    {% elif admin.email == current_user.email %}
+                                    <span class="badge bg-info p-2">Current User</span>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function toggleSuperAdmin(adminId) {
+    if (confirm('Are you sure you want to toggle super admin status?')) {
+        fetch(`/admin/admins/${adminId}/toggle-super`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Error: ' + data.error);
+            }
+        });
+    }
+}
+
+function deleteAdmin(adminId) {
+    if (confirm('WARNING: This will permanently delete this admin account!')) {
+        fetch(`/admin/admins/${adminId}/delete`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Error: ' + data.error);
+            }
+        });
+    }
+}
+</script>
+{% endblock %}

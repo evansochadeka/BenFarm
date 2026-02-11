@@ -1,0 +1,296 @@
+<!-- BenFarm AI Chat Assistant Component -->
+<div class="card shadow-sm" id="benfarm-chat">
+    <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+        <div class="d-flex align-items-center">
+            <div class="position-relative me-2">
+                <i class="fas fa-robot fa-2x"></i>
+                <span class="position-absolute bottom-0 end-0 p-1 bg-success border border-light rounded-circle">
+                    <span class="visually-hidden">Online</span>
+                </span>
+            </div>
+            <div>
+                <h5 class="mb-0">BenFarm AI Assistant</h5>
+                <small class="text-white-50">Trained by Benedict Odhiambo</small>
+            </div>
+        </div>
+        <button class="btn btn-sm btn-outline-light" type="button" data-bs-toggle="collapse" data-bs-target="#chatCollapse" 
+                aria-expanded="true" aria-controls="chatCollapse">
+            <i class="fas fa-minus"></i>
+        </button>
+    </div>
+    
+    <div class="collapse show" id="chatCollapse">
+        <div class="card-body">
+            <!-- Chat Messages Container -->
+            <div id="chatMessages" class="mb-3" style="height: 300px; overflow-y: auto; background: #f8f9fa; padding: 15px; border-radius: 10px;">
+                <div class="d-flex mb-3">
+                    <div class="flex-shrink-0">
+                        <div class="bg-success rounded-circle p-2" style="width: 40px; height: 40px;">
+                            <i class="fas fa-robot text-white"></i>
+                        </div>
+                    </div>
+                    <div class="flex-grow-1 ms-3">
+                        <div class="bg-white p-3 rounded-3 shadow-sm">
+                            <strong class="text-success">BenFarm 🤖</strong>
+                            <small class="text-muted ms-2">Online</small>
+                            <p class="mb-0 mt-2">
+                                Habari yako! I'm BenFarm, your AI farming assistant 🌱<br>
+                                I was specially trained by Benedict Odhiambo to help Kenyan farmers.<br><br>
+                                Ask me about:
+                                • Plant diseases 🍂
+                                • Farming tips 🌽  
+                                • Weather advice ☀️
+                                • Organic solutions 🌿
+                                • Or just say hello! 👋
+                            </p>
+                            <small class="text-muted d-block mt-2">
+                                Need a human expert? Contact Benedict directly: <strong>+254713593573</strong>
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Quick Questions -->
+            <div class="mb-3">
+                <small class="text-muted d-block mb-2">Quick questions:</small>
+                <div class="d-flex flex-wrap gap-2">
+                    <button onclick="sendQuickMessage('How do I control aphids on my kale?')" class="btn btn-sm btn-outline-success">
+                        Aphids on kale
+                    </button>
+                    <button onclick="sendQuickMessage('What causes yellow leaves on tomatoes?')" class="btn btn-sm btn-outline-success">
+                        Yellow tomato leaves
+                    </button>
+                    <button onclick="sendQuickMessage('Best time to plant maize in Rift Valley?')" class="btn btn-sm btn-outline-success">
+                        Maize planting
+                    </button>
+                    <button onclick="sendQuickMessage('I want to speak to Benedict')" class="btn btn-sm btn-outline-primary">
+                        Contact Benedict 📞
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Chat Input -->
+            <div class="input-group">
+                <input type="text" id="chatInput" class="form-control" 
+                       placeholder="Ask BenFarm anything about farming..." 
+                       aria-label="Chat message"
+                       onkeypress="if(event.key==='Enter') sendMessage()">
+                <button class="btn btn-success" type="button" onclick="sendMessage()" id="sendButton">
+                    <i class="fas fa-paper-plane"></i> Send
+                </button>
+            </div>
+            <small class="text-muted mt-2 d-block">
+                <i class="fas fa-info-circle"></i> Trained by Benedict Odhiambo. For urgent help, call <strong>+254713593573</strong>
+            </small>
+        </div>
+    </div>
+</div>
+
+<style>
+#benfarm-chat {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 400px;
+    z-index: 1000;
+    box-shadow: 0 5px 25px rgba(0,0,0,0.1);
+    border: none;
+    border-radius: 15px;
+    overflow: hidden;
+}
+
+@media (max-width: 768px) {
+    #benfarm-chat {
+        width: 100%;
+        right: 0;
+        bottom: 0;
+        border-radius: 15px 15px 0 0;
+    }
+}
+
+#chatMessages {
+    scroll-behavior: smooth;
+}
+
+#chatMessages::-webkit-scrollbar {
+    width: 5px;
+}
+
+#chatMessages::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 10px;
+}
+
+#chatMessages::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 10px;
+}
+
+#chatMessages::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+.message-bubble {
+    max-width: 85%;
+    word-wrap: break-word;
+}
+
+.typing-indicator {
+    display: flex;
+    gap: 5px;
+    padding: 10px;
+    background: #e9ecef;
+    border-radius: 20px;
+    width: fit-content;
+}
+
+.typing-indicator span {
+    width: 8px;
+    height: 8px;
+    background: #6c757d;
+    border-radius: 50%;
+    animation: typing 1.4s infinite ease-in-out;
+}
+
+.typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+.typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes typing {
+    0%, 60%, 100% { transform: translateY(0); opacity: 0.6; }
+    30% { transform: translateY(-10px); opacity: 1; }
+}
+</style>
+
+<script>
+let isTyping = false;
+
+function sendQuickMessage(message) {
+    document.getElementById('chatInput').value = message;
+    sendMessage();
+}
+
+function sendMessage() {
+    const input = document.getElementById('chatInput');
+    const message = input.value.trim();
+    
+    if (!message) return;
+    
+    // Add user message to chat
+    addMessage('user', message);
+    input.value = '';
+    
+    // Show typing indicator
+    showTypingIndicator();
+    
+    // Send to backend
+    fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ message: message })
+    })
+    .then(response => response.json())
+    .then(data => {
+        removeTypingIndicator();
+        if (data.success) {
+            addMessage('benfarm', data.response);
+        } else {
+            addMessage('benfarm', 'Pole! I am having trouble. Please contact Benedict Odhiambo directly at **+254713593573** for immediate help. Asante! 🙏');
+        }
+    })
+    .catch(error => {
+        removeTypingIndicator();
+        addMessage('benfarm', 'Sorry, I cannot connect right now. Please reach out to Benedict at **+254713593573**.');
+    });
+}
+
+function addMessage(sender, text) {
+    const messagesContainer = document.getElementById('chatMessages');
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `d-flex mb-3 ${sender === 'user' ? 'justify-content-end' : ''}`;
+    
+    if (sender === 'benfarm') {
+        messageDiv.innerHTML = `
+            <div class="flex-shrink-0">
+                <div class="bg-success rounded-circle p-2" style="width: 40px; height: 40px;">
+                    <i class="fas fa-robot text-white"></i>
+                </div>
+            </div>
+            <div class="flex-grow-1 ms-3 message-bubble">
+                <div class="bg-white p-3 rounded-3 shadow-sm">
+                    <strong class="text-success">BenFarm</strong>
+                    <p class="mb-0 mt-2" style="white-space: pre-wrap;">${formatResponse(text)}</p>
+                </div>
+            </div>
+        `;
+    } else {
+        messageDiv.innerHTML = `
+            <div class="flex-grow-1 text-end message-bubble">
+                <div class="bg-success text-white p-3 rounded-3 shadow-sm d-inline-block" style="max-width: 100%;">
+                    <p class="mb-0" style="white-space: pre-wrap;">${escapeHtml(text)}</p>
+                </div>
+            </div>
+        `;
+    }
+    
+    messagesContainer.appendChild(messageDiv);
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+}
+
+function showTypingIndicator() {
+    if (isTyping) return;
+    isTyping = true;
+    
+    const messagesContainer = document.getElementById('chatMessages');
+    const typingDiv = document.createElement('div');
+    typingDiv.id = 'typingIndicator';
+    typingDiv.className = 'd-flex mb-3';
+    typingDiv.innerHTML = `
+        <div class="flex-shrink-0">
+            <div class="bg-success rounded-circle p-2" style="width: 40px; height: 40px;">
+                <i class="fas fa-robot text-white"></i>
+            </div>
+        </div>
+        <div class="flex-grow-1 ms-3">
+            <div class="typing-indicator">
+                <span></span>
+                <span></span>
+                <span></span>
+            </div>
+        </div>
+    `;
+    messagesContainer.appendChild(typingDiv);
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+}
+
+function removeTypingIndicator() {
+    isTyping = false;
+    const indicator = document.getElementById('typingIndicator');
+    if (indicator) indicator.remove();
+}
+
+function formatResponse(text) {
+    // Convert markdown-style bold to HTML
+    text = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    // Convert bullet points
+    text = text.replace(/•/g, '•');
+    // Convert links
+    text = text.replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" class="text-success">$1</a>');
+    // Convert phone numbers
+    text = text.replace(/(\+?\d{10,13})/g, '<a href="tel:$1" class="text-success">$1</a>');
+    // Convert newlines to <br>
+    text = text.replace(/\n/g, '<br>');
+    return text;
+}
+
+function escapeHtml(unsafe) {
+    return unsafe
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+</script>

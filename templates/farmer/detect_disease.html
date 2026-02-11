@@ -2,49 +2,111 @@
 
 {% block title %}Plant Disease Detection - Adiseware{% endblock %}
 
+{% block extra_css %}
+<style>
+    /* ... keep all existing styles ... */
+    
+    .required-field::after {
+        content: " *";
+        color: red;
+        font-weight: bold;
+    }
+    
+    .raw-data-section {
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 10px;
+        padding: 20px;
+        margin-top: 30px;
+    }
+    
+    .raw-data-header {
+        background: #6c757d;
+        color: white;
+        padding: 10px 15px;
+        border-radius: 8px 8px 0 0;
+        margin: -20px -20px 20px -20px;
+    }
+    
+    .raw-data-content {
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        border: 1px solid #e9ecef;
+        font-family: 'Courier New', monospace;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        max-height: 400px;
+        overflow-y: auto;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="row">
-    <div class="col-md-8 mx-auto">
-        <div class="card">
-            <div class="card-header">
-                <h1 class="h4 mb-0"><i class="fas fa-microscope" aria-hidden="true"></i> Plant Disease Detection</h1>
+    <div class="col-md-10 mx-auto">
+        <div class="card mb-4">
+            <div class="card-header bg-success text-white">
+                <h1 class="h4 mb-0">
+                    <i class="fas fa-microscope" aria-hidden="true"></i> 
+                    Plant Disease Detection & Diagnosis
+                </h1>
             </div>
             <div class="card-body">
+                <div class="alert alert-warning" role="alert">
+                    <i class="fas fa-info-circle"></i> 
+                    <strong>Important:</strong> Please provide a detailed description of your plant's condition for accurate diagnosis!
+                </div>
+                
                 <form id="diseaseForm" enctype="multipart/form-data" novalidate>
-                    <div class="mb-3">
-                        <label for="plant_image" class="form-label">Upload Plant Image <span class="text-danger" aria-label="required">*</span></label>
-                        <input type="file" class="form-control" id="plant_image" name="plant_image" accept="image/*" required 
+                    <div class="mb-4">
+                        <label for="plant_image" class="form-label fw-bold required-field">
+                            <i class="fas fa-camera"></i> Upload Plant Image
+                        </label>
+                        <input type="file" class="form-control" id="plant_image" name="plant_image" 
+                               accept="image/*" required 
                                aria-required="true" aria-describedby="imageHelp">
-                        <div id="imageHelp" class="form-text">Upload a clear photo of the affected plant</div>
-                        <div id="imagePreview" class="mt-2"></div>
+                        <div id="imageHelp" class="form-text">
+                            Upload a clear photo of the affected plant (leaves, stems, or fruits)
+                        </div>
+                        <div id="imagePreview" class="mt-3 text-center"></div>
                     </div>
                     
-                    <div class="mb-3">
-                        <label for="description" class="form-label">Additional Description (Optional)</label>
-                        <textarea class="form-control" id="description" name="description" rows="3" 
-                                  aria-describedby="descHelp" placeholder="Describe any symptoms or concerns..."></textarea>
-                        <div id="descHelp" class="form-text">Provide any additional context about the plant's condition</div>
+                    <div class="mb-4">
+                        <label for="description" class="form-label fw-bold required-field">
+                            <i class="fas fa-pen"></i> Detailed Plant Description
+                        </label>
+                        <textarea class="form-control" id="description" name="description" rows="5" 
+                                  required
+                                  aria-describedby="descHelp" 
+                                  placeholder="Please describe in detail:&#10;• What plant is this? (e.g., Kale, Tomato, Maize)&#10;• What symptoms do you see? (yellow leaves, spots, wilting)&#10;• When did symptoms start?&#10;• Recent weather conditions?&#10;• Any treatments already applied?"></textarea>
+                        <div id="descHelp" class="form-text text-danger">
+                            * Description is required for accurate plant identification
+                        </div>
                     </div>
                     
                     <div class="d-grid">
-                        <button type="submit" class="btn btn-primary btn-lg" id="analyzeButton">
-                            <i class="fas fa-search" aria-hidden="true"></i> Analyze Plant
+                        <button type="submit" class="btn btn-success btn-lg" id="analyzeButton">
+                            <i class="fas fa-search" aria-hidden="true"></i> 
+                            Analyze Plant Health
                         </button>
                     </div>
                 </form>
                 
-                <div id="loadingIndicator" class="text-center mt-4" style="display: none;" role="status" aria-live="polite">
-                    <div class="spinner-border text-primary" role="status">
+                <div id="loadingIndicator" class="text-center mt-5" style="display: none;" role="status" aria-live="polite">
+                    <div class="spinner-border text-success" style="width: 4rem; height: 4rem;" role="status">
                         <span class="visually-hidden">Analyzing plant image...</span>
                     </div>
-                    <p class="mt-2">Analyzing your plant image... This may take a moment.</p>
+                    <p class="mt-4 fw-bold h5">Dr. Njogu from KALRO is analyzing your plant...</p>
+                    <p class="text-muted">This may take 15-20 seconds</p>
+                    <div class="progress mt-3" style="height: 10px;">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated bg-success" 
+                             style="width: 100%;"></div>
+                    </div>
                 </div>
                 
-                <div id="resultsContainer" class="mt-4" style="display: none;">
-                    <div class="alert alert-success" role="alert">
-                        <h2 class="h5 alert-heading"><i class="fas fa-check-circle" aria-hidden="true"></i> Analysis Complete</h2>
-                        <div id="analysisResults"></div>
-                    </div>
+                <div id="resultsContainer" class="mt-5" style="display: none;">
+                    <!-- All analysis results will be displayed here -->
                 </div>
             </div>
         </div>
@@ -58,7 +120,8 @@ document.getElementById('plant_image').addEventListener('change', function(e) {
         const reader = new FileReader();
         reader.onload = function(e) {
             document.getElementById('imagePreview').innerHTML = 
-                `<img src="${e.target.result}" alt="Preview of plant image" class="img-fluid" style="max-height: 300px;">`;
+                `<img src="${e.target.result}" alt="Preview of plant image" 
+                      class="img-fluid rounded shadow" style="max-height: 300px; border: 3px solid #4caf50;">`;
         };
         reader.readAsDataURL(file);
     }
@@ -66,6 +129,13 @@ document.getElementById('plant_image').addEventListener('change', function(e) {
 
 document.getElementById('diseaseForm').addEventListener('submit', function(e) {
     e.preventDefault();
+    
+    // Check if description is provided
+    const description = document.getElementById('description').value.trim();
+    if (!description) {
+        alert('Please provide a description of your plant condition');
+        return;
+    }
     
     const formData = new FormData(this);
     const loadingIndicator = document.getElementById('loadingIndicator');
@@ -86,9 +156,9 @@ document.getElementById('diseaseForm').addEventListener('submit', function(e) {
         analyzeButton.disabled = false;
         
         if (data.success) {
-            document.getElementById('analysisResults').innerHTML = data.analysis;
+            displayAnalysisResults(data.analysis, data.raw_response);
             resultsContainer.style.display = 'block';
-            resultsContainer.focus();
+            resultsContainer.scrollIntoView({ behavior: 'smooth' });
         } else {
             alert('Error: ' + (data.error || 'Analysis failed'));
         }
@@ -96,8 +166,262 @@ document.getElementById('diseaseForm').addEventListener('submit', function(e) {
     .catch(error => {
         loadingIndicator.style.display = 'none';
         analyzeButton.disabled = false;
+        console.error('Error:', error);
         alert('Error analyzing image. Please try again.');
     });
 });
+
+function displayAnalysisResults(analysis, rawResponse) {
+    let confidenceClass = 'confidence-medium';
+    if (analysis.confidence === 'High') confidenceClass = 'confidence-high';
+    if (analysis.confidence === 'Low') confidenceClass = 'confidence-low';
+    
+    // Table 1: Plant and Disease Identification
+    let html = `
+        <div class="alert alert-success" role="alert">
+            <h2 class="h5 alert-heading">
+                <i class="fas fa-check-circle" aria-hidden="true"></i> 
+                Analysis Complete
+            </h2>
+        </div>
+        
+        <h3 class="section-title mt-3">
+            <i class="fas fa-clipboard-list"></i> Diagnosis Results
+        </h3>
+        
+        <table class="disease-table">
+            <tr>
+                <th colspan="2" style="background: linear-gradient(135deg, #6a1b9a 0%, #4a148c 100%);">
+                    <i class="fas fa-leaf"></i> PLANT IDENTIFICATION
+                </th>
+            </tr>
+            <tr>
+                <td style="width: 30%; background-color: #f3e5f5;"><strong>Common Name</strong></td>
+                <td><span class="plant-badge">${analysis.plant_name || 'Unknown'}</span></td>
+            </tr>
+            <tr>
+                <td style="background-color: #f3e5f5;"><strong>Scientific Name</strong></td>
+                <td><em>${analysis.plant_scientific_name || 'Unknown'}</em></td>
+            </tr>
+        </table>
+        
+        <table class="disease-table">
+            <tr>
+                <th colspan="2" style="background: linear-gradient(135deg, #c62828 0%, #8e0000 100%);">
+                    <i class="fas fa-biohazard"></i> DISEASE IDENTIFICATION
+                </th>
+            </tr>
+            <tr>
+                <td style="width: 30%; background-color: #ffebee;"><strong>Disease Name</strong></td>
+                <td><span class="fw-bold text-danger">${analysis.disease_name || 'Unknown'}</span></td>
+            </tr>
+            <tr>
+                <td style="background-color: #ffebee;"><strong>Scientific Name</strong></td>
+                <td><em>${analysis.disease_scientific_name || 'Unknown'}</em></td>
+            </tr>
+            <tr>
+                <td style="background-color: #ffebee;"><strong>Confidence Level</strong></td>
+                <td><span class="${confidenceClass}">${analysis.confidence || 'Medium'}</span></td>
+            </tr>
+        </table>
+    `;
+    
+    // Symptoms
+    if (analysis.symptoms && analysis.symptoms.length > 0) {
+        html += `
+            <table class="info-table">
+                <tr>
+                    <th><i class="fas fa-exclamation-triangle"></i> SYMPTOMS</th>
+                </tr>
+                <tr>
+                    <td>
+                        <div class="d-flex flex-wrap">
+        `;
+        
+        analysis.symptoms.forEach(symptom => {
+            html += `<span class="symptom-tag">${symptom}</span>`;
+        });
+        
+        html += `</div></td></tr></table>`;
+    }
+    
+    // Detailed Disease Information
+    html += `
+        <h3 class="section-title mt-5">
+            <i class="fas fa-info-circle"></i> Detailed Disease Analysis
+        </h3>
+        
+        <table class="info-table">
+            <tr>
+                <th colspan="2"><i class="fas fa-flask"></i> CAUSE OF DISEASE</th>
+            </tr>
+            <tr>
+                <td colspan="2" style="background-color: #fff3e0;">
+                    ${analysis.cause_of_disease || 'Information not available'}
+                </td>
+            </tr>
+            
+            <tr>
+                <th colspan="2"><i class="fas fa-sync-alt"></i> DISEASE CYCLE & SPREAD</th>
+            </tr>
+            <tr>
+                <td colspan="2" style="background-color: #e1f5fe;">
+                    ${analysis.disease_cycle || 'Information not available'}
+                </td>
+            </tr>
+    `;
+    
+    // Environmental Conditions
+    if (analysis.environmental_conditions && Object.keys(analysis.environmental_conditions).length > 0) {
+        html += `
+            <tr>
+                <th colspan="2"><i class="fas fa-temperature-high"></i> ENVIRONMENTAL CONDITIONS FAVORING DISEASE</th>
+            </tr>
+            <tr>
+                <td colspan="2">
+                    <table style="width: 100%;">
+        `;
+        
+        for (const [key, value] of Object.entries(analysis.environmental_conditions)) {
+            html += `
+                <tr>
+                    <td style="width: 30%; padding: 5px;"><strong>${key}:</strong></td>
+                    <td style="padding: 5px;">${value}</td>
+                </tr>
+            `;
+        }
+        
+        html += `</table></td></tr>`;
+    }
+    
+    html += `</table>`;
+    
+    // Recommended Medications
+    if (analysis.medications && analysis.medications.length > 0) {
+        html += `
+            <table class="info-table mt-4">
+                <tr>
+                    <th><i class="fas fa-pills"></i> RECOMMENDED MEDICATIONS (Available in Kenya)</th>
+                </tr>
+                <tr>
+                    <td>
+        `;
+        
+        analysis.medications.forEach(med => {
+            html += `
+                <div class="medication-card">
+                    <i class="fas fa-flask text-success"></i> ${med}
+                </div>
+            `;
+        });
+        
+        html += `</td></tr></table>`;
+    }
+    
+    // Organic Alternatives
+    if (analysis.organic_alternatives && analysis.organic_alternatives.length > 0) {
+        html += `
+            <table class="info-table">
+                <tr>
+                    <th><i class="fas fa-leaf"></i> ORGANIC ALTERNATIVES</th>
+                </tr>
+                <tr>
+                    <td>
+        `;
+        
+        analysis.organic_alternatives.forEach(alt => {
+            html += `
+                <div class="organic-card">
+                    <i class="fas fa-seedling text-warning"></i> ${alt}
+                </div>
+            `;
+        });
+        
+        html += `</td></tr></table>`;
+    }
+    
+    // Cultural Control Methods
+    if (analysis.cultural_control && analysis.cultural_control.length > 0) {
+        html += `
+            <table class="info-table">
+                <tr>
+                    <th><i class="fas fa-tools"></i> CULTURAL CONTROL METHODS</th>
+                </tr>
+                <tr>
+                    <td>
+        `;
+        
+        analysis.cultural_control.forEach(method => {
+            html += `
+                <div class="cultural-card">
+                    <i class="fas fa-check-circle text-info"></i> ${method}
+                </div>
+            `;
+        });
+        
+        html += `</td></tr></table>`;
+    }
+    
+    // Prevention Tips
+    if (analysis.prevention_tips && analysis.prevention_tips.length > 0) {
+        html += `
+            <table class="info-table">
+                <tr>
+                    <th><i class="fas fa-shield-alt"></i> PREVENTION TIPS</th>
+                </tr>
+                <tr>
+                    <td>
+        `;
+        
+        analysis.prevention_tips.forEach(tip => {
+            html += `<div class="prevention-tip">${tip}</div>`;
+        });
+        
+        html += `</td></tr></table>`;
+    }
+    
+    // General Guidelines
+    if (analysis.general_guidelines) {
+        html += `
+            <div class="guidelines-box">
+                <h4 class="h6 fw-bold mb-3">
+                    <i class="fas fa-clipboard-check"></i> GENERAL GUIDELINES FOR KENYAN FARMERS
+                </h4>
+                <p class="mb-0">${analysis.general_guidelines}</p>
+            </div>
+        `;
+    }
+    
+    // Additional Advice
+    if (analysis.additional_advice) {
+        html += `
+            <div class="alert alert-info mt-4 mb-0">
+                <i class="fas fa-info-circle"></i> 
+                <strong>Additional Advice:</strong> ${analysis.additional_advice}
+            </div>
+        `;
+    }
+    
+    // RAW COHERE RESPONSE - Display everything from the AI
+    if (rawResponse) {
+        html += `
+            <div class="raw-data-section">
+                <div class="raw-data-header">
+                    <h4 class="h5 mb-0">
+                        <i class="fas fa-robot"></i> Complete AI Analysis Response
+                    </h4>
+                </div>
+                <div class="raw-data-content">
+                    ${rawResponse.replace(/\n/g, '<br>')}
+                </div>
+                <div class="mt-2 text-muted small">
+                    <i class="fas fa-info-circle"></i> This is the complete, unedited response from Dr. Njogu at KALRO
+                </div>
+            </div>
+        `;
+    }
+    
+    document.getElementById('resultsContainer').innerHTML = html;
+}
 </script>
 {% endblock %}

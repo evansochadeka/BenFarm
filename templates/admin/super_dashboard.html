@@ -1,0 +1,255 @@
+{% extends "components/base.html" %}
+
+{% block title %}Super Admin Dashboard - BenFarming{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h1 class="display-5 mb-0">
+                <i class="fas fa-crown text-warning"></i> Super Admin Dashboard
+            </h1>
+            <p class="text-muted">Welcome back, {{ current_user.full_name }}. You have full system control.</p>
+        </div>
+    </div>
+
+    <!-- Statistics Cards -->
+    <div class="row mb-4">
+        <div class="col-xl-3 col-md-6 mb-4">
+            <div class="card border-left-primary shadow h-100 py-2">
+                <div class="card-body">
+                    <div class="row no-gutters align-items-center">
+                        <div class="col mr-2">
+                            <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">
+                                Total Users</div>
+                            <div class="h5 mb-0 font-weight-bold text-gray-800">{{ total_users }}</div>
+                        </div>
+                        <div class="col-auto">
+                            <i class="fas fa-users fa-2x text-gray-300"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-3 col-md-6 mb-4">
+            <div class="card border-left-success shadow h-100 py-2">
+                <div class="card-body">
+                    <div class="row no-gutters align-items-center">
+                        <div class="col mr-2">
+                            <div class="text-xs font-weight-bold text-success text-uppercase mb-1">
+                                Total Admins</div>
+                            <div class="h5 mb-0 font-weight-bold text-gray-800">{{ total_admins }}</div>
+                        </div>
+                        <div class="col-auto">
+                            <i class="fas fa-user-shield fa-2x text-gray-300"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-3 col-md-6 mb-4">
+            <div class="card border-left-info shadow h-100 py-2">
+                <div class="card-body">
+                    <div class="row no-gutters align-items-center">
+                        <div class="col mr-2">
+                            <div class="text-xs font-weight-bold text-info text-uppercase mb-1">
+                                Disease Reports</div>
+                            <div class="h5 mb-0 font-weight-bold text-gray-800">{{ total_disease_reports }}</div>
+                        </div>
+                        <div class="col-auto">
+                            <i class="fas fa-leaf fa-2x text-gray-300"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-3 col-md-6 mb-4">
+            <div class="card border-left-warning shadow h-100 py-2">
+                <div class="card-body">
+                    <div class="row no-gutters align-items-center">
+                        <div class="col mr-2">
+                            <div class="text-xs font-weight-bold text-warning text-uppercase mb-1">
+                                Community Posts</div>
+                            <div class="h5 mb-0 font-weight-bold text-gray-800">{{ total_posts }}</div>
+                        </div>
+                        <div class="col-auto">
+                            <i class="fas fa-comments fa-2x text-gray-300"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card shadow">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="fas fa-bolt"></i> Quick Actions</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-3 mb-2">
+                            <a href="{{ url_for('admin.manage_all_users') }}" class="btn btn-outline-primary w-100">
+                                <i class="fas fa-users"></i> Manage Users
+                            </a>
+                        </div>
+                        <div class="col-md-3 mb-2">
+                            <a href="{{ url_for('admin.manage_admins') }}" class="btn btn-outline-success w-100">
+                                <i class="fas fa-user-shield"></i> Manage Admins
+                            </a>
+                        </div>
+                        <div class="col-md-3 mb-2">
+                            <a href="{{ url_for('admin.manage_posts') }}" class="btn btn-outline-info w-100">
+                                <i class="fas fa-file-alt"></i> Manage Posts
+                            </a>
+                        </div>
+                        <div class="col-md-3 mb-2">
+                            <a href="{{ url_for('admin.system_settings') }}" class="btn btn-outline-warning w-100">
+                                <i class="fas fa-cog"></i> System Settings
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Recent Users -->
+        <div class="col-lg-6 mb-4">
+            <div class="card shadow">
+                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="fas fa-user-plus"></i> Recent Users</h5>
+                    <a href="{{ url_for('admin.manage_all_users') }}" class="btn btn-sm btn-light">View All</a>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Email</th>
+                                    <th>Type</th>
+                                    <th>Joined</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for user in recent_users %}
+                                <tr>
+                                    <td>{{ user.full_name }}</td>
+                                    <td>{{ user.email }}</td>
+                                    <td><span class="badge bg-{{ 'success' if user.user_type == 'farmer' else 'info' if user.user_type == 'agrovet' else 'warning' }}">
+                                        {{ user.user_type }}
+                                    </span></td>
+                                    <td>{{ user.created_at|datetime }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Admins -->
+        <div class="col-lg-6 mb-4">
+            <div class="card shadow">
+                <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="fas fa-user-shield"></i> Admin Accounts</h5>
+                    <a href="{{ url_for('admin.manage_admins') }}" class="btn btn-sm btn-light">Manage</a>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Email</th>
+                                    <th>Role</th>
+                                    <th>Last Login</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for admin in recent_admins %}
+                                <tr>
+                                    <td>{{ admin.full_name }}</td>
+                                    <td>{{ admin.email }}</td>
+                                    <td>
+                                        {% if admin.is_super_admin %}
+                                        <span class="badge bg-warning">Super Admin</span>
+                                        {% else %}
+                                        <span class="badge bg-secondary">Admin</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ admin.last_login|datetime if admin.last_login else 'Never' }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Disease Reports -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card shadow">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0"><i class="fas fa-leaf"></i> Recent Disease Reports</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Farmer</th>
+                                    <th>Disease</th>
+                                    <th>Location</th>
+                                    <th>Confidence</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for report in recent_reports %}
+                                <tr>
+                                    <td>{{ report.created_at|datetime }}</td>
+                                    <td>{{ report.farmer.full_name if report.farmer else 'Unknown' }}</td>
+                                    <td>{{ report.disease_detected or 'Pending' }}</td>
+                                    <td>{{ report.location or 'N/A' }}</td>
+                                    <td>
+                                        {% if report.confidence %}
+                                            {% if report.confidence > 0.7 %}
+                                            <span class="badge bg-success">{{ (report.confidence * 100)|int }}%</span>
+                                            {% elif report.confidence > 0.4 %}
+                                            <span class="badge bg-warning">{{ (report.confidence * 100)|int }}%</span>
+                                            {% else %}
+                                            <span class="badge bg-danger">{{ (report.confidence * 100)|int }}%</span>
+                                            {% endif %}
+                                        {% else %}
+                                        <span class="badge bg-secondary">N/A</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-{{ 'warning' if report.status == 'pending' else 'success' if report.status == 'analyzed' else 'info' }}">
+                                            {{ report.status }}
+                                        </span>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,92 +1,321 @@
 {% extends "components/base.html" %}
 
-{% block title %}Weather & Recommendations - Adiseware{% endblock %}
+{% block title %}Weather & Farming Recommendations - Adiseware{% endblock %}
+
+{% block extra_css %}
+<style>
+    .weather-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border-radius: 15px;
+        padding: 25px;
+        margin-bottom: 25px;
+    }
+    
+    .weather-temp {
+        font-size: 4rem;
+        font-weight: 700;
+        line-height: 1;
+    }
+    
+    .weather-detail {
+        background: rgba(255,255,255,0.2);
+        border-radius: 10px;
+        padding: 15px;
+        text-align: center;
+        backdrop-filter: blur(10px);
+    }
+    
+    .forecast-card {
+        background: white;
+        border-radius: 12px;
+        padding: 20px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        transition: transform 0.2s;
+        height: 100%;
+    }
+    
+    .forecast-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 8px 12px rgba(0,0,0,0.1);
+    }
+    
+    .recommendation-card {
+        background: #f0fff4;
+        border-left: 4px solid #48bb78;
+        border-radius: 10px;
+        padding: 20px;
+        margin-bottom: 15px;
+    }
+    
+    .recommendation-icon {
+        font-size: 1.5rem;
+        color: #48bb78;
+        margin-right: 15px;
+    }
+    
+    .weather-icon {
+        width: 100px;
+        height: 100px;
+    }
+    
+    .humidity-progress {
+        height: 8px;
+        background: rgba(255,255,255,0.3);
+        border-radius: 4px;
+        margin-top: 10px;
+    }
+    
+    .humidity-fill {
+        height: 100%;
+        background: #48bb78;
+        border-radius: 4px;
+        transition: width 0.3s;
+    }
+    
+    @media (max-width: 768px) {
+        .weather-temp {
+            font-size: 3rem;
+        }
+    }
+</style>
+{% endblock %}
 
 {% block content %}
-<h1 class="mb-4">Weather & Farming Recommendations</h1>
-
-<div class="row">
-    <div class="col-md-8">
-        {% if weather %}
-        <div class="card mb-4">
-            <div class="card-header bg-primary text-white">
-                <h2 class="h5 mb-0"><i class="fas fa-cloud-sun" aria-hidden="true"></i> Current Weather in {{ weather.name }}</h2>
-            </div>
-            <div class="card-body">
-                <div class="row">
-                    <div class="col-md-6">
-                        <h3 class="display-4">{{ weather.main.temp }}°C</h3>
-                        <p class="lead">{{ weather.weather[0].description|capitalize }}</p>
-                        <p><strong>Feels like:</strong> {{ weather.main.feels_like }}°C</p>
-                        <p><strong>Humidity:</strong> {{ weather.main.humidity }}%</p>
-                        <p><strong>Wind Speed:</strong> {{ weather.wind.speed }} m/s</p>
-                    </div>
-                    <div class="col-md-6">
-                        <img src="http://openweathermap.org/img/wn/{{ weather.weather[0].icon }}@4x.png" 
-                             alt="Weather icon for {{ weather.weather[0].description }}" class="img-fluid">
-                    </div>
-                </div>
-                
-                <div class="alert alert-info mt-3" role="alert">
-                    <h3 class="h6 alert-heading"><i class="fas fa-lightbulb" aria-hidden="true"></i> Farming Recommendations</h3>
-                    {% if weather.main.temp > 30 %}
-                    <p>High temperatures detected. Ensure adequate irrigation for your crops.</p>
-                    {% elif weather.main.temp < 10 %}
-                    <p>Low temperatures. Protect sensitive crops from cold stress.</p>
-                    {% endif %}
-                    
-                    {% if weather.main.humidity > 70 %}
-                    <p>High humidity may increase risk of fungal diseases. Monitor plants closely.</p>
-                    {% endif %}
-                </div>
-            </div>
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h1 class="display-5 mb-0">
+                <i class="fas fa-cloud-sun text-primary" aria-hidden="true"></i> 
+                Weather & Farming Recommendations
+            </h1>
+            <p class="text-muted">Get real-time weather data and crop-specific advice for Kenyan farmers</p>
         </div>
-        
-        {% if forecast %}
-        <div class="card">
-            <div class="card-header">
-                <h2 class="h5 mb-0"><i class="fas fa-calendar-alt" aria-hidden="true"></i> 5-Day Forecast</h2>
-            </div>
-            <div class="card-body">
-                <div class="row">
-                    {% for item in forecast.list[:5] %}
-                    <div class="col-md-4 mb-3">
-                        <div class="card text-center">
-                            <div class="card-body">
-                                <p class="mb-1"><strong>{{ item.dt_txt }}</strong></p>
-                                <img src="http://openweathermap.org/img/wn/{{ item.weather[0].icon }}@2x.png" 
-                                     alt="{{ item.weather[0].description }}" class="img-fluid">
-                                <p class="mb-0">{{ item.main.temp }}°C</p>
-                                <p class="small text-muted">{{ item.weather[0].description|capitalize }}</p>
+    </div>
+
+    <div class="row">
+        <div class="col-md-8">
+            {% if weather %}
+            <!-- Current Weather Card -->
+            <div class="weather-card mb-4">
+                <div class="row align-items-center">
+                    <div class="col-md-6">
+                        <h2 class="h4 mb-3">
+                            <i class="fas fa-map-marker-alt"></i> 
+                            {{ weather.name }}, {{ weather.sys.country }}
+                        </h2>
+                        <div class="d-flex align-items-center mb-3">
+                            <span class="weather-temp">{{ weather.main.temp|round(0) }}°C</span>
+                            <span class="ms-3 text-white-50">Feels like {{ weather.main.feels_like|round(0) }}°C</span>
+                        </div>
+                        <p class="lead mb-0">
+                            <i class="fas {{ 'fa-sun' if weather.weather[0].main == 'Clear' else 'fa-cloud-sun' if weather.weather[0].main == 'Clouds' else 'fa-cloud-rain' }}"></i>
+                            {{ weather.weather[0].description|capitalize }}
+                        </p>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="row">
+                            <div class="col-6 mb-3">
+                                <div class="weather-detail">
+                                    <i class="fas fa-tint fa-2x mb-2"></i>
+                                    <h3 class="h6 mb-0">Humidity</h3>
+                                    <p class="h4 mb-0">{{ weather.main.humidity }}%</p>
+                                    <div class="humidity-progress">
+                                        <div class="humidity-fill" style="width: {{ weather.main.humidity }}%;"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6 mb-3">
+                                <div class="weather-detail">
+                                    <i class="fas fa-wind fa-2x mb-2"></i>
+                                    <h3 class="h6 mb-0">Wind Speed</h3>
+                                    <p class="h4 mb-0">{{ (weather.wind.speed * 3.6)|round(1) }} km/h</p>
+                                    <p class="small mb-0">{{ weather.wind.speed }} m/s</p>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="weather-detail">
+                                    <i class="fas fa-compress-alt fa-2x mb-2"></i>
+                                    <h3 class="h6 mb-0">Pressure</h3>
+                                    <p class="h4 mb-0">{{ weather.main.pressure }} hPa</p>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="weather-detail">
+                                    <i class="fas fa-eye fa-2x mb-2"></i>
+                                    <h3 class="h6 mb-0">Visibility</h3>
+                                    <p class="h4 mb-0">{{ (weather.visibility/1000)|round(1) }} km</p>
+                                </div>
                             </div>
                         </div>
                     </div>
-                    {% endfor %}
                 </div>
             </div>
-        </div>
-        {% endif %}
-        {% else %}
-        <div class="alert alert-warning" role="alert">
-            Unable to load weather data. Please try again later.
-        </div>
-        {% endif %}
-    </div>
-    
-    <div class="col-md-4">
-        <div class="card">
-            <div class="card-header">
-                <h2 class="h6 mb-0">Change Location</h2>
-            </div>
-            <div class="card-body">
-                <form method="GET" action="{{ url_for('farmer_weather') }}">
-                    <div class="mb-3">
-                        <label for="location" class="form-label">City Name</label>
-                        <input type="text" class="form-control" id="location" name="location" 
-                               placeholder="Enter city name" value="{{ request.args.get('location', '') }}">
+            
+            <!-- Farming Recommendations -->
+            {% if recommendations %}
+            <div class="card mb-4">
+                <div class="card-header bg-success text-white">
+                    <h3 class="h5 mb-0">
+                        <i class="fas fa-lightbulb"></i> Smart Farming Recommendations
+                    </h3>
+                </div>
+                <div class="card-body">
+                    {% if recommendations.irrigation %}
+                    <div class="recommendation-card">
+                        <div class="d-flex">
+                            <i class="fas fa-tint recommendation-icon"></i>
+                            <div>
+                                <h4 class="h6 fw-bold">Irrigation Advice</h4>
+                                <ul class="mb-0">
+                                    {% for tip in recommendations.irrigation %}
+                                    <li>{{ tip }}</li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                        </div>
                     </div>
-                    <button type="submit" class="btn btn-primary w-100">Get Weather</button>
-                </form>
+                    {% endif %}
+                    
+                    {% if recommendations.planting %}
+                    <div class="recommendation-card">
+                        <div class="d-flex">
+                            <i class="fas fa-seedling recommendation-icon"></i>
+                            <div>
+                                <h4 class="h6 fw-bold">Planting & Transplanting</h4>
+                                <ul class="mb-0">
+                                    {% for tip in recommendations.planting %}
+                                    <li>{{ tip }}</li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    {% if recommendations.pest_disease %}
+                    <div class="recommendation-card">
+                        <div class="d-flex">
+                            <i class="fas fa-bug recommendation-icon"></i>
+                            <div>
+                                <h4 class="h6 fw-bold">Pest & Disease Management</h4>
+                                <ul class="mb-0">
+                                    {% for tip in recommendations.pest_disease %}
+                                    <li>{{ tip }}</li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    {% if recommendations.general %}
+                    <div class="recommendation-card">
+                        <div class="d-flex">
+                            <i class="fas fa-clipboard-check recommendation-icon"></i>
+                            <div>
+                                <h4 class="h6 fw-bold">General Advice</h4>
+                                <ul class="mb-0">
+                                    {% for tip in recommendations.general %}
+                                    <li>{{ tip }}</li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+            
+            <!-- 5-Day Forecast -->
+            {% if forecast and forecast.list %}
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h3 class="h5 mb-0">
+                        <i class="fas fa-calendar-alt"></i> 5-Day Weather Forecast
+                    </h3>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        {% set days = [] %}
+                        {% for item in forecast.list %}
+                            {% set date = item.dt_txt.split(' ')[0] %}
+                            {% if date not in days %}
+                                {% set days = days.append(date) %}
+                                {% if days|length <= 5 %}
+                                <div class="col-md-4 col-lg-2 mb-3">
+                                    <div class="forecast-card text-center">
+                                        <p class="fw-bold mb-2">{{ item.dt_txt|datetime|format('%a') }}</p>
+                                        <p class="small text-muted mb-2">{{ date }}</p>
+                                        <img src="http://openweathermap.org/img/wn/{{ item.weather[0].icon }}@2x.png" 
+                                             alt="{{ item.weather[0].description }}" 
+                                             style="width: 60px; height: 60px;">
+                                        <p class="h5 mb-1">{{ item.main.temp|round(0) }}°C</p>
+                                        <p class="small text-capitalize">{{ item.weather[0].description }}</p>
+                                        <div class="d-flex justify-content-center small">
+                                            <span class="text-primary me-2">
+                                                <i class="fas fa-tint"></i> {{ item.main.humidity }}%
+                                            </span>
+                                            {% if item.rain and item.rain['3h'] %}
+                                            <span class="text-info">
+                                                <i class="fas fa-umbrella"></i> {{ item.rain['3h'] }}mm
+                                            </span>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </div>
+                                {% endif %}
+                            {% endif %}
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+            
+            {% else %}
+            <div class="alert alert-warning" role="alert">
+                <i class="fas fa-exclamation-triangle"></i>
+                Unable to load weather data. Please check your internet connection or try again later.
+            </div>
+            {% endif %}
+        </div>
+        
+        <div class="col-md-4">
+            <!-- Location Search Card -->
+            <div class="card sticky-top" style="top: 20px; z-index: 100;">
+                <div class="card-header bg-info text-white">
+                    <h3 class="h6 mb-0"><i class="fas fa-search"></i> Check Weather</h3>
+                </div>
+                <div class="card-body">
+                    <form method="GET" action="{{ url_for('farmer_weather') }}">
+                        <div class="mb-3">
+                            <label for="location" class="form-label">Enter City or County</label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="fas fa-map-marker-alt"></i></span>
+                                <input type="text" class="form-control" id="location" name="location" 
+                                       placeholder="e.g., Nairobi, Kisumu, Mombasa" 
+                                       value="{{ request.args.get('location', '') }}">
+                            </div>
+                            <div class="form-text">Major Kenyan cities and counties supported</div>
+                        </div>
+                        <button type="submit" class="btn btn-info w-100 text-white">
+                            <i class="fas fa-cloud-sun"></i> Get Weather
+                        </button>
+                    </form>
+                    
+                    <hr>
+                    
+                    <div class="bg-light p-3 rounded">
+                        <h4 class="h6 fw-bold"><i class="fas fa-tips"></i> Weather Tips</h4>
+                        <ul class="small mb-0">
+                            <li class="mb-2">🌱 Check weather before planting</li>
+                            <li class="mb-2">💧 High humidity increases disease risk</li>
+                            <li class="mb-2">☔ Rainy season: Prepare drainage</li>
+                            <li>🌞 Dry season: Plan irrigation schedule</li>
+                        </ul>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
