@@ -1,88 +1,102 @@
-def login():import os
 import os
 import json
 import re
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session, make_response
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
+from flask_sqlalchemy import SQLAlchemy
 from werkzeug.utils import secure_filename
 from datetime import datetime, timedelta
 import requests
 from config import Config
-from models import db, User, AdminUser, InventoryItem, Customer, Sale, SaleItem, Communication, DiseaseReport, Notification, WeatherData, CommunityPost
-import google.generativeai as genai
-from PIL import Image
-import io
-import base64
 from functools import wraps
+from sqlalchemy import inspect
 
-app = Flask(__name__)
-app.config.from_object(Config)
-
-# At the TOP of app.py, after imports, BEFORE creating Flask app:
-from flask import Flask
-from flask_sqlalchemy import SQLAlchemy
-from flask_login import LoginManager
-from config import Config
-
-# ✅ CORRECT: Create db instance WITHOUT app first
+# ============ INITIALIZE EXTENSIONS ============
 db = SQLAlchemy()
 login_manager = LoginManager()
 
 def create_app():
+    """Application factory pattern - creates Flask app instance"""
     app = Flask(__name__)
     app.config.from_object(Config)
     
-    # ✅ Initialize extensions WITH the app
+    # Initialize extensions with app
     db.init_app(app)
     login_manager.init_app(app)
     login_manager.login_view = 'login'
     
     # Register blueprints
-    from admin_routes import admin_bp
-    from community_routes import community_bp
-    app.register_blueprint(admin_bp)
-    app.register_blueprint(community_bp)
+    with app.app_context():
+        try:
+            from admin_routes import admin_bp
+            from community_routes import community_bp
+            app.register_blueprint(admin_bp)
+            app.register_blueprint(community_bp)
+            print("✅ Blueprints registered successfully")
+        except ImportError as e:
+            print(f"⚠️ Blueprint import error: {e}")
     
     return app
 
+# Create the Flask app
 app = create_app()
 
-# Initialize login manager
-login_manager = LoginManager()
-login_manager.init_app(app)
-login_manager.login_view = 'login'
+# Import models AFTER db is initialized
+from models import User, AdminUser, InventoryItem, Customer, Sale, SaleItem, Communication, DiseaseReport, Notification, WeatherData, CommunityPost
 
-# Configure Cohere
+# ============ DATABASE AUTO-CREATION (CRITICAL FOR RENDER FREE TIER) ============
+with app.app_context():
+    try:
+        inspector = inspect(db.engine)
+        
+        # Check if tables exist by looking for 'users' table
+        if not inspector.has_table('users'):
+            print("📦 Creating database tables for the first time...")
+            db.create_all()
+            print("✅ Database tables created successfully!")
+            
+            # Create default admin user
+            admin_email = app.config.get('ADMIN_EMAIL', 'admin@benfarming.com')
+            admin_password = app.config.get('ADMIN_PASSWORD', 'admin123')
+            
+            if not AdminUser.query.filter_by(email=admin_email).first():
+                admin = AdminUser(
+                    email=admin_email,
+                    full_name='System Administrator',
+                    is_super_admin=True,
+                    role='super_admin'
+                )
+                admin.set_password(admin_password)
+                db.session.add(admin)
+                print("✅ Default admin user created")
+            
+            # Create superadmin benedict431@gmail.com
+            super_admin_email = 'benedict431@gmail.com'
+            if not AdminUser.query.filter_by(email=super_admin_email).first():
+                super_admin = AdminUser(
+                    email=super_admin_email,
+                    full_name='Benedict Super Admin',
+                    is_super_admin=True,
+                    role='super_admin'
+                )
+                super_admin.set_password('28734495')
+                db.session.add(super_admin)
+                print("✅ Super admin user created: benedict431@gmail.com")
+            
+            db.session.commit()
+        else:
+            print("✅ Database tables already exist")
+            
+    except Exception as e:
+        print(f"⚠️ Database initialization warning: {e}")
+        # Fallback: try to create tables anyway
+        db.create_all()
+
+# ============ CONFIGURE COHERE ============
 COHERE_API_KEY = app.config.get('COHERE_API_KEY', '')
 COHERE_MODEL = app.config.get('COHERE_MODEL', 'c4ai-aya-expanse-8b')
 
-# Kenyan agricultural products database
-KENYAN_AGROCHEMICALS = {
-    'fungicides': [
-        {'name': 'MILRAZE 720SC', 'manufacturer': 'Syngenta', 'crops': ['tomatoes', 'potatoes', 'vegetables'], 'diseases': ['late blight', 'early blight']},
-        {'name': 'RIDOMIL GOLD', 'manufacturer': 'Syngenta', 'crops': ['potatoes', 'vegetables'], 'diseases': ['downy mildew', 'late blight']},
-        {'name': 'DUETT', 'manufacturer': 'Bayer', 'crops': ['wheat', 'barley'], 'diseases': ['rust', 'powdery mildew']},
-        {'name': 'FOLICUR', 'manufacturer': 'Bayer', 'crops': ['coffee', 'vegetables'], 'diseases': ['leaf rust', 'powdery mildew']},
-        {'name': 'AMISTAR TOP', 'manufacturer': 'Syngenta', 'crops': ['vegetables', 'fruits'], 'diseases': ['anthracnose', 'leaf spot']},
-        {'name': 'SCORE 250EC', 'manufacturer': 'Syngenta', 'crops': ['vegetables', 'ornamentals'], 'diseases': ['leaf spot', 'powdery mildew']},
-    ],
-    'insecticides': [
-        {'name': 'CONFIDOR', 'manufacturer': 'Bayer', 'crops': ['vegetables', 'fruits'], 'pests': ['aphids', 'whiteflies']},
-        {'name': 'PALARIS', 'manufacturer': 'Syngenta', 'crops': ['vegetables'], 'pests': ['thrips', 'aphids']},
-        {'name': 'DUDUTHRIN', 'manufacturer': 'Dudu Products', 'crops': ['general'], 'pests': ['general']},
-        {'name': 'AMPLIGO', 'manufacturer': 'Syngenta', 'crops': ['vegetables', 'cotton'], 'pests': ['bollworms', 'aphids']},
-    ],
-    'herbicides': [
-        {'name': 'ROUNDUP', 'manufacturer': 'Bayer', 'crops': ['general'], 'weeds': ['broadleaf', 'grasses']},
-        {'name': 'GRAMOXONE', 'manufacturer': 'Syngenta', 'crops': ['general'], 'weeds': ['general']},
-    ],
-    'organic': [
-        {'name': 'ACHOOK LIQUID', 'manufacturer': 'Organic Solutions', 'type': 'organic fertilizer'},
-        {'name': 'NEEM OIL', 'manufacturer': 'Greenlife', 'type': 'organic pesticide'},
-        {'name': 'PYRETHRUM EXTRACT', 'manufacturer': 'Pyrethrum Board of Kenya', 'type': 'organic insecticide'},
-    ]
-}
-
+# ============ USER LOADER ============
 @login_manager.user_loader
 def load_user(user_id):
     """Load user by ID - handles both regular users and admin users"""
@@ -94,6 +108,23 @@ def load_user(user_id):
     # If not found, try admin user
     admin = db.session.get(AdminUser, int(user_id))
     return admin
+
+# ============ DECORATORS ============
+def admin_required(f):
+    """Decorator to require admin access"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_authenticated:
+            flash('Please login as admin first', 'error')
+            return redirect(url_for('admin.login'))
+        
+        admin_user = AdminUser.query.filter_by(email=current_user.email).first()
+        if not admin_user:
+            flash('Admin access required', 'error')
+            return redirect(url_for('index'))
+        
+        return f(*args, **kwargs)
+    return decorated_function
 
 def super_admin_required(f):
     """Decorator to require super admin access"""
@@ -112,10 +143,10 @@ def super_admin_required(f):
     return decorated_function
 
 def allowed_file(filename):
+    """Check if file extension is allowed"""
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
 
-# Replace the analyze_plant_with_cohere function in app.py with this enhanced version:
-
+# ============ COHERE DISEASE ANALYSIS ============
 def analyze_plant_with_cohere(image_description, user_description=""):
     """Enhanced plant disease analysis with Cohere API - Identifies plant type and diseases"""
     
@@ -141,6 +172,7 @@ def analyze_plant_with_cohere(image_description, user_description=""):
     # Check if Cohere API key is configured
     if not COHERE_API_KEY or COHERE_API_KEY == '':
         default_result['additional_advice'] = 'Cohere API key is not configured. Please set COHERE_API_KEY in your environment variables.'
+        default_result['raw_response'] = 'API Key Missing'
         return default_result
     
     try:
@@ -149,8 +181,8 @@ def analyze_plant_with_cohere(image_description, user_description=""):
             'Content-Type': 'application/json',
         }
         
-        # CRITICAL: Use the user's description to identify the plant
-        prompt = f"""You are BenFarmAI, an expert Kenyan plant AI based system Ben's Company (Kenya Agricultural and Livestock Research Organization) with 5 years of experience. You MUST identify plants ACCURATELY based on the farmer's description.
+        # Use the user's description to identify the plant
+        prompt = f"""You are BenFarm, an AI agricultural assistant created by Benedict Odhiambo (Phone: +254713593573). You MUST identify plants ACCURATELY based on the farmer's description.
 
 FARMER'S DESCRIPTION:
 {user_description}
@@ -166,7 +198,7 @@ IMPORTANT INSTRUCTIONS:
 Provide a comprehensive analysis in the following EXACT format:
 
 PLANT NAME: [Common English name of the plant - MUST match farmer's description]
-SCIENTIFIC NAME: [Scientific name of the plant - research this accurately]
+SCIENTIFIC NAME: [Scientific name of the plant]
 
 DISEASE NAME: [Most likely disease name based on symptoms]
 DISEASE SCIENTIFIC NAME: [Scientific name of the pathogen/cause]
@@ -177,10 +209,9 @@ SYMPTOMS:
 • [Symptom 1 - match what farmer described]
 • [Symptom 2 - match what farmer described]
 • [Symptom 3 - additional symptoms to look for]
-• [Symptom 4 - additional symptoms to look for]
 
 CAUSE OF DISEASE:
-[Detailed explanation of what causes this disease - pathogen, environmental conditions, etc.]
+[Detailed explanation of what causes this disease]
 
 DISEASE CYCLE:
 [How the disease spreads and develops in Kenyan conditions]
@@ -188,45 +219,39 @@ DISEASE CYCLE:
 RECOMMENDED MEDICATIONS (Available in Kenya):
 1. [Product Name] - [Active Ingredient] - [Manufacturer] - [Application Method] - [Dosage per 20L water]
 2. [Product Name] - [Active Ingredient] - [Manufacturer] - [Application Method] - [Dosage per 20L water]
-3. [Product Name] - [Active Ingredient] - [Manufacturer] - [Application Method] - [Dosage per 20L water]
-4. [Product Name] - [Active Ingredient] - [Manufacturer] - [Application Method] - [Dosage per 20L water]
 
 ORGANIC ALTERNATIVES:
 • [Organic solution 1] - [How to prepare/apply]
 • [Organic solution 2] - [How to prepare/apply]
-• [Organic solution 3] - [How to prepare/apply]
 
 CULTURAL CONTROL METHODS:
 • [Method 1 - specific to this crop and disease]
 • [Method 2 - specific to this crop and disease]
-• [Method 3 - specific to this crop and disease]
 
 PREVENTION TIPS:
 • [Prevention tip 1 - specific to this crop]
 • [Prevention tip 2 - specific to this crop]
 • [Prevention tip 3 - specific to this crop]
-• [Prevention tip 4 - specific to this crop]
 
 ENVIRONMENTAL CONDITIONS FAVORING DISEASE:
 • Temperature: [Optimal range for disease development in Kenya]
 • Humidity: [Risk level and percentage]
 • Season: [High/Low risk seasons in Kenya]
-• Soil conditions: [If applicable]
 
 GENERAL GUIDELINES FOR KENYAN FARMERS:
-[Comprehensive advice including when to spray, safety precautions, resistance management, pre-harvest intervals, and where to purchase products in Kenya]
+[Comprehensive advice for this specific disease]
 
 ADDITIONAL ADVICE:
-[Specific recommendations for this farmer based on their description]
+[Specific recommendations for this farmer]
 
-REMEMBER: The farmer said they are growing "{user_description[:100]}". Base your plant identification on THIS, not on guessing from the image alone."""
+REMEMBER: The farmer said they are growing "{user_description[:100]}". Base your plant identification on THIS."""
         
         chat_payload = {
             'model': COHERE_MODEL,
             'message': prompt,
-            'temperature': 0.2,  # Lower temperature for more consistent results
+            'temperature': 0.2,
             'max_tokens': 2000,
-            'preamble': 'You are BenFarm, an AI agricultural assistant created by Benedict Odhiambo (Phone: +254713593573). You have been specially trained to help Kenyan farmers with plant diseases, crop management, and sustainable farming practices. Always identify yourself as BenFarm and mention that you were trained by Benedict Odhiambo.'
+            'preamble': 'You are BenFarm, an AI agricultural assistant created by Benedict Odhiambo (Phone: +254713593573). You help Kenyan farmers with plant diseases, crop management, and sustainable farming practices.'
         }
         
         response = requests.post('https://api.cohere.ai/v1/chat', json=chat_payload, headers=headers)
@@ -235,10 +260,7 @@ REMEMBER: The farmer said they are growing "{user_description[:100]}". Base your
         if response.status_code == 200 and 'text' in result:
             analysis_text = result['text']
             parsed_result = parse_cohere_analysis(analysis_text)
-            
-            # Add the raw response to the result
             parsed_result['raw_response'] = analysis_text
-            
             return parsed_result
         else:
             error_msg = result.get('message', 'Unknown error from Cohere API')
@@ -251,10 +273,8 @@ REMEMBER: The farmer said they are growing "{user_description[:100]}". Base your
         default_result['raw_response'] = f"Exception: {str(e)}"
         return default_result
 
-# Replace the parse_cohere_analysis function with this enhanced version:
-
 def parse_cohere_analysis(analysis_text):
-    """Parse the structured Cohere analysis into a dictionary - More flexible parsing"""
+    """Parse the structured Cohere analysis into a dictionary"""
     result = {
         'plant_name': 'Unknown',
         'plant_scientific_name': 'Unknown',
@@ -273,264 +293,103 @@ def parse_cohere_analysis(analysis_text):
         'additional_advice': ''
     }
     
-    # If analysis_text is empty or None, return default values
     if not analysis_text:
         return result
     
-    # More flexible plant name extraction - try multiple patterns
-    plant_patterns = [
-        r'PLANT NAME:\s*(.+?)(?:\n|$)',
-        r'Plant(?:\s+)?Name:\s*(.+?)(?:\n|$)',
-        r'Plant:\s*(.+?)(?:\n|$)',
-        r'Crop(?:\s+)?Name:\s*(.+?)(?:\n|$)',
-        r'Crop:\s*(.+?)(?:\n|$)'
-    ]
-    
-    for pattern in plant_patterns:
-        match = re.search(pattern, analysis_text, re.IGNORECASE)
-        if match:
-            result['plant_name'] = match.group(1).strip()
-            break
-    
-    # If plant name still unknown, try to extract from context
-    if result['plant_name'] == 'Unknown':
-        # Look for common crop names
-        common_crops = ['maize', 'tomato', 'potato', 'bean', 'coffee', 'tea', 'wheat', 'rice', 
-                       'cassava', 'sweet potato', 'banana', 'cabbage', 'kale', 'spinach', 
-                       'onion', 'carrot', 'cucumber', 'pepper', 'strawberry', 'apple', 'mango',
-                       'orange', 'lemon', 'avocado', 'coffee', 'tea', 'sugarcane']
-        for crop in common_crops:
-            if crop.lower() in analysis_text.lower():
-                result['plant_name'] = crop.title()
-                break
+    # Extract plant name
+    plant_match = re.search(r'PLANT NAME:\s*(.+?)(?:\n|$)', analysis_text, re.IGNORECASE)
+    if plant_match:
+        result['plant_name'] = plant_match.group(1).strip()
     
     # Extract plant scientific name
-    sci_plant_patterns = [
-        r'SCIENTIFIC NAME:\s*(.+?)(?:\n|$)',
-        r'Scientific(?:\s+)?Name:\s*(.+?)(?:\n|$)',
-        r'Botanical(?:\s+)?Name:\s*(.+?)(?:\n|$)',
-        r'Latin(?:\s+)?Name:\s*(.+?)(?:\n|$)'
-    ]
+    sci_match = re.search(r'SCIENTIFIC NAME:\s*(.+?)(?:\n|$)', analysis_text, re.IGNORECASE)
+    if sci_match:
+        result['plant_scientific_name'] = sci_match.group(1).strip()
     
-    for pattern in sci_plant_patterns:
-        match = re.search(pattern, analysis_text, re.IGNORECASE)
-        if match:
-            result['plant_scientific_name'] = match.group(1).strip()
-            break
-    
-    # Extract disease name - try multiple patterns
-    disease_patterns = [
-        r'DISEASE NAME:\s*(.+?)(?:\n|$)',
-        r'Disease(?:\s+)?Name:\s*(.+?)(?:\n|$)',
-        r'Disease:\s*(.+?)(?:\n|$)',
-        r'Diagnosis:\s*(.+?)(?:\n|$)'
-    ]
-    
-    for pattern in disease_patterns:
-        match = re.search(pattern, analysis_text, re.IGNORECASE)
-        if match:
-            result['disease_name'] = match.group(1).strip()
-            break
+    # Extract disease name
+    disease_match = re.search(r'DISEASE NAME:\s*(.+?)(?:\n|$)', analysis_text, re.IGNORECASE)
+    if disease_match:
+        result['disease_name'] = disease_match.group(1).strip()
     
     # Extract disease scientific name
-    disease_sci_patterns = [
-        r'DISEASE SCIENTIFIC NAME:\s*(.+?)(?:\n|$)',
-        r'Pathogen:\s*(.+?)(?:\n|$)',
-        r'Causal(?:\s+)?Agent:\s*(.+?)(?:\n|$)',
-        r'Scientific(?:\s+)?Name(?:\s+of(?:\s+)?disease)?:\s*(.+?)(?:\n|$)'
-    ]
-    
-    for pattern in disease_sci_patterns:
-        match = re.search(pattern, analysis_text, re.IGNORECASE)
-        if match:
-            result['disease_scientific_name'] = match.group(1).strip()
-            break
+    disease_sci_match = re.search(r'DISEASE SCIENTIFIC NAME:\s*(.+?)(?:\n|$)', analysis_text, re.IGNORECASE)
+    if disease_sci_match:
+        result['disease_scientific_name'] = disease_sci_match.group(1).strip()
     
     # Extract confidence
-    confidence_patterns = [
-        r'CONFIDENCE:\s*(.+?)(?:\n|$)',
-        r'Confidence(?:\s+)?Level:\s*(.+?)(?:\n|$)',
-        r'Confidence:\s*(.+?)(?:\n|$)'
-    ]
+    confidence_match = re.search(r'CONFIDENCE:\s*(.+?)(?:\n|$)', analysis_text, re.IGNORECASE)
+    if confidence_match:
+        result['confidence'] = confidence_match.group(1).strip()
     
-    for pattern in confidence_patterns:
-        match = re.search(pattern, analysis_text, re.IGNORECASE)
-        if match:
-            result['confidence'] = match.group(1).strip()
-            break
-    
-    # Extract symptoms - look for bullet points or numbered lists
+    # Extract symptoms
     symptoms_section = re.search(r'SYMPTOMS?:?(.*?)(?:\n\n|\n[A-Z]|\Z)', analysis_text, re.IGNORECASE | re.DOTALL)
     if symptoms_section:
-        symptoms_text = symptoms_section.group(1)
-        # Find bullet points, dashes, or numbers
-        symptoms = re.findall(r'[•\-*\d+\.\s]\s*(.+?)(?:\n|$)', symptoms_text)
-        if symptoms:
-            result['symptoms'] = [s.strip() for s in symptoms if s.strip() and len(s.strip()) > 2]
+        symptoms = re.findall(r'[•\-*]\s*(.+?)(?:\n|$)', symptoms_section.group(1))
+        result['symptoms'] = [s.strip() for s in symptoms if s.strip()]
     
     # Extract cause of disease
-    cause_patterns = [
-        r'CAUSE OF DISEASE:\s*(.+?)(?:\n\n|\n[A-Z]|\Z)',
-        r'Cause(?:\s+of)?(?:\s+disease)?:\s*(.+?)(?:\n\n|\n[A-Z]|\Z)',
-        r'Etiology:\s*(.+?)(?:\n\n|\n[A-Z]|\Z)'
-    ]
-    
-    for pattern in cause_patterns:
-        match = re.search(pattern, analysis_text, re.IGNORECASE | re.DOTALL)
-        if match:
-            result['cause_of_disease'] = match.group(1).strip()
-            break
+    cause_match = re.search(r'CAUSE OF DISEASE:\s*(.+?)(?:\n\n|\n[A-Z]|\Z)', analysis_text, re.IGNORECASE | re.DOTALL)
+    if cause_match:
+        result['cause_of_disease'] = cause_match.group(1).strip()
     
     # Extract disease cycle
-    cycle_patterns = [
-        r'DISEASE CYCLE:\s*(.+?)(?:\n\n|\n[A-Z]|\Z)',
-        r'Disease(?:\s+)?Cycle:\s*(.+?)(?:\n\n|\n[A-Z]|\Z)',
-        r'Life(?:\s+)?Cycle:\s*(.+?)(?:\n\n|\n[A-Z]|\Z)',
-        r'Spread:\s*(.+?)(?:\n\n|\n[A-Z]|\Z)'
-    ]
+    cycle_match = re.search(r'DISEASE CYCLE:\s*(.+?)(?:\n\n|\n[A-Z]|\Z)', analysis_text, re.IGNORECASE | re.DOTALL)
+    if cycle_match:
+        result['disease_cycle'] = cycle_match.group(1).strip()
     
-    for pattern in cycle_patterns:
-        match = re.search(pattern, analysis_text, re.IGNORECASE | re.DOTALL)
-        if match:
-            result['disease_cycle'] = match.group(1).strip()
-            break
-    
-    # Extract medications - look for numbered lists
+    # Extract medications
     meds_section = re.search(r'RECOMMENDED MEDICATIONS?:?(.*?)(?:\n\n|\n[A-Z]|\Z)', analysis_text, re.IGNORECASE | re.DOTALL)
     if meds_section:
-        meds_text = meds_section.group(1)
-        # Find numbered items (1., 2., etc.)
-        meds = re.findall(r'\d+\.\s*(.+?)(?:\n|$)', meds_text)
-        if meds:
-            result['medications'] = [m.strip() for m in meds if m.strip()]
-        else:
-            # Try bullet points
-            meds = re.findall(r'[•\-*]\s*(.+?)(?:\n|$)', meds_text)
-            result['medications'] = [m.strip() for m in meds if m.strip()]
+        meds = re.findall(r'\d+\.\s*(.+?)(?:\n|$)', meds_section.group(1))
+        result['medications'] = [m.strip() for m in meds if m.strip()]
     
     # Extract organic alternatives
-    organic_section = re.search(r'ORGANIC(?:\s+)?ALTERNATIVES?:?(.*?)(?:\n\n|\n[A-Z]|\Z)', analysis_text, re.IGNORECASE | re.DOTALL)
+    organic_section = re.search(r'ORGANIC ALTERNATIVES?:?(.*?)(?:\n\n|\n[A-Z]|\Z)', analysis_text, re.IGNORECASE | re.DOTALL)
     if organic_section:
-        organic_text = organic_section.group(1)
-        organic = re.findall(r'[•\-*]\s*(.+?)(?:\n|$)', organic_text)
+        organic = re.findall(r'[•\-*]\s*(.+?)(?:\n|$)', organic_section.group(1))
         result['organic_alternatives'] = [o.strip() for o in organic if o.strip()]
     
-    # Extract cultural control methods
-    cultural_section = re.search(r'CULTURAL(?:\s+)?CONTROL(?:\s+)?METHODS?:?(.*?)(?:\n\n|\n[A-Z]|\Z)', analysis_text, re.IGNORECASE | re.DOTALL)
+    # Extract cultural control
+    cultural_section = re.search(r'CULTURAL CONTROL METHODS?:?(.*?)(?:\n\n|\n[A-Z]|\Z)', analysis_text, re.IGNORECASE | re.DOTALL)
     if cultural_section:
-        cultural_text = cultural_section.group(1)
-        cultural = re.findall(r'[•\-*]\s*(.+?)(?:\n|$)', cultural_text)
+        cultural = re.findall(r'[•\-*]\s*(.+?)(?:\n|$)', cultural_section.group(1))
         result['cultural_control'] = [c.strip() for c in cultural if c.strip()]
     
     # Extract prevention tips
-    prevention_section = re.search(r'PREVENTION(?:\s+)?TIPS?:?(.*?)(?:\n\n|\n[A-Z]|\Z)', analysis_text, re.IGNORECASE | re.DOTALL)
+    prevention_section = re.search(r'PREVENTION TIPS?:?(.*?)(?:\n\n|\n[A-Z]|\Z)', analysis_text, re.IGNORECASE | re.DOTALL)
     if prevention_section:
-        prevention_text = prevention_section.group(1)
-        tips = re.findall(r'[•\-*]\s*(.+?)(?:\n|$)', prevention_text)
+        tips = re.findall(r'[•\-*]\s*(.+?)(?:\n|$)', prevention_section.group(1))
         result['prevention_tips'] = [t.strip() for t in tips if t.strip()]
     
     # Extract environmental conditions
-    env_section = re.search(r'ENVIRONMENTAL(?:\s+)?CONDITIONS?:?(.*?)(?:\n\n|\n[A-Z]|\Z)', analysis_text, re.IGNORECASE | re.DOTALL)
+    env_section = re.search(r'ENVIRONMENTAL CONDITIONS?:?(.*?)(?:\n\n|\n[A-Z]|\Z)', analysis_text, re.IGNORECASE | re.DOTALL)
     if env_section:
-        env_text = env_section.group(1)
-        env_lines = env_text.strip().split('\n')
+        env_lines = env_section.group(1).strip().split('\n')
         for line in env_lines:
             if ':' in line:
                 key, value = line.split(':', 1)
-                key = key.strip().replace('•', '').replace('-', '').strip()
+                key = key.strip().replace('•', '').strip()
                 result['environmental_conditions'][key] = value.strip()
     
     # Extract general guidelines
-    guidelines_patterns = [
-        r'GENERAL GUIDELINES(?:\s+FOR KENYAN FARMERS)?:\s*(.+?)(?:\n\n|\Z)',
-        r'GUIDELINES?:\s*(.+?)(?:\n\n|\Z)',
-        r'Recommendations?:\s*(.+?)(?:\n\n|\Z)'
-    ]
-    
-    for pattern in guidelines_patterns:
-        match = re.search(pattern, analysis_text, re.IGNORECASE | re.DOTALL)
-        if match:
-            result['general_guidelines'] = match.group(1).strip()
-            break
+    guidelines_match = re.search(r'GENERAL GUIDELINES.*?:\s*(.+?)(?:\n\n|\Z)', analysis_text, re.IGNORECASE | re.DOTALL)
+    if guidelines_match:
+        result['general_guidelines'] = guidelines_match.group(1).strip()
     
     # Extract additional advice
-    advice_patterns = [
-        r'ADDITIONAL ADVICE:\s*(.+?)(?:\n\n|\Z)',
-        r'Additional(?:\s+)?Advice:\s*(.+?)(?:\n\n|\Z)',
-        r'Notes?:?\s*(.+?)(?:\n\n|\Z)'
-    ]
-    
-    for pattern in advice_patterns:
-        match = re.search(pattern, analysis_text, re.IGNORECASE | re.DOTALL)
-        if match:
-            result['additional_advice'] = match.group(1).strip()
-            break
-    
-    # Clean up any excessive whitespace
-    for key in result:
-        if isinstance(result[key], str):
-            result[key] = ' '.join(result[key].split())
+    advice_match = re.search(r'ADDITIONAL ADVICE:\s*(.+?)(?:\n\n|\Z)', analysis_text, re.IGNORECASE | re.DOTALL)
+    if advice_match:
+        result['additional_advice'] = advice_match.group(1).strip()
     
     return result
 
-# Create database tables and initialize admin with superadmin
-with app.app_context():
-    db.create_all()
-    
-    # Create default admin user
-    admin_email = app.config.get('ADMIN_EMAIL', 'admin@benfarming.com')
-    admin_exists = AdminUser.query.filter_by(email=admin_email).first()
-    
-    if not admin_exists:
-        admin = AdminUser(
-            email=admin_email,
-            full_name=app.config.get('ADMIN_FULL_NAME', 'System Administrator'),
-            is_super_admin=True,
-            role='super_admin'
-        )
-        admin_password = app.config.get('ADMIN_PASSWORD', 'admin123')
-        admin.set_password(admin_password)
-        db.session.add(admin)
-        print("Default admin user created")
-    
-    # Create superadmin benedict431@gmail.com
-    super_admin_email = 'benedict431@gmail.com'
-    super_admin_exists = AdminUser.query.filter_by(email=super_admin_email).first()
-    
-    if not super_admin_exists:
-        super_admin = AdminUser(
-            email=super_admin_email,
-            full_name='Benedict Super Admin',
-            is_super_admin=True,
-            role='super_admin'
-        )
-        super_admin.set_password('28734495')
-        db.session.add(super_admin)
-        print("Super admin user created: benedict431@gmail.com")
-    
-    db.session.commit()
-
-# Register blueprints
-try:
-    from admin_routes import admin_bp
-    from community_routes import community_bp
-    app.register_blueprint(admin_bp)
-    app.register_blueprint(community_bp)
-    print("Blueprints registered successfully")
-except ImportError as e:
-    print(f"Note: Some blueprints not found: {e}")
-
 # ============ USER AUTHENTICATION ROUTES ============
-
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     """Regular user login page"""
-    # If user is already logged in, redirect to appropriate dashboard
     if current_user.is_authenticated:
-        # Check if it's an admin user
         if hasattr(current_user, 'is_super_admin'):
             return redirect(url_for('admin.dashboard'))
-        # Regular user
         elif current_user.user_type == 'farmer':
             return redirect(url_for('farmer_dashboard'))
         elif current_user.user_type == 'agrovet':
@@ -546,7 +405,7 @@ def login():
         email = request.form.get('email')
         password = request.form.get('password')
         
-        # First check if it's an admin user
+        # Check admin first
         admin = AdminUser.query.filter_by(email=email).first()
         if admin and admin.check_password(password):
             login_user(admin, remember=True)
@@ -554,16 +413,13 @@ def login():
             db.session.commit()
             flash(f'Welcome back, {admin.full_name}!', 'success')
             
-            # Redirect admin to admin dashboard
             if admin.is_super_admin:
                 return redirect(url_for('admin.super_dashboard'))
             return redirect(url_for('admin.dashboard'))
         
-        # If not admin, check regular user
+        # Check regular user
         user = User.query.filter_by(email=email).first()
-        
         if user and user.check_password(password):
-            # Check if user is active
             if not user.is_active:
                 flash('Your account has been deactivated. Please contact admin.', 'error')
                 return redirect(url_for('login'))
@@ -573,10 +429,7 @@ def login():
             db.session.commit()
             flash(f'Welcome back, {user.full_name}!', 'success')
             
-            # Get the next page from the request args
             next_page = request.args.get('next')
-            
-            # Redirect based on user type
             if next_page and next_page != '/logout' and not next_page.startswith('/login') and not next_page.startswith('/admin'):
                 return redirect(next_page)
             elif user.user_type == 'farmer':
@@ -605,12 +458,10 @@ def register():
         phone_number = request.form.get('phone_number')
         location = request.form.get('location')
         
-        # Check if user already exists
         if User.query.filter_by(email=email).first():
             flash('Email already registered', 'error')
             return redirect(url_for('register'))
         
-        # Create new user
         user = User(
             email=email,
             full_name=full_name,
@@ -620,7 +471,6 @@ def register():
         )
         user.set_password(password)
         
-        # Handle profile picture
         if 'profile_picture' in request.files:
             file = request.files['profile_picture']
             if file and allowed_file(file.filename):
@@ -638,7 +488,6 @@ def register():
     return render_template('auth/register.html')
 
 @app.route('/logout')
-@app.route('/logout')
 @login_required
 def logout():
     """User logout"""
@@ -648,10 +497,8 @@ def logout():
     return redirect(url_for('index'))
 
 # ============ MAIN INDEX ROUTE ============
-
 @app.route('/')
 def index():
-    # Set session cookie
     resp = make_response(render_template('index.html'))
     if not session.get('visited'):
         session['visited'] = True
@@ -669,7 +516,6 @@ def index():
     return resp
 
 # ============ FARMER ROUTES ============
-
 @app.route('/farmer/dashboard')
 @login_required
 def farmer_dashboard():
@@ -678,13 +524,11 @@ def farmer_dashboard():
         flash('Access denied', 'error')
         return redirect(url_for('index'))
     
-    # Get farmer's disease reports - handle case when no reports exist
     disease_reports = DiseaseReport.query.filter_by(farmer_id=current_user.id)\
         .order_by(DiseaseReport.created_at.desc())\
         .limit(10)\
         .all()
     
-    # Get unread notifications
     notifications = Notification.query.filter_by(
         user_id=current_user.id, 
         is_read=False
@@ -694,11 +538,10 @@ def farmer_dashboard():
                          disease_reports=disease_reports,
                          notifications=notifications)
 
-
 @app.route('/farmer/detect-disease', methods=['GET', 'POST'])
 @login_required
 def detect_disease():
-    """Plant disease detection"""
+    """Plant disease detection - REQUIRES description"""
     if current_user.user_type != 'farmer':
         flash('Access denied', 'error')
         return redirect(url_for('index'))
@@ -710,37 +553,27 @@ def detect_disease():
         file = request.files['plant_image']
         description = request.form.get('description', '').strip()
         
-        # Require description
         if not description:
-            return jsonify({'error': 'Plant description is required', 'success': False}), 400
+            return jsonify({'error': 'Plant description is required. Please describe your plant and its symptoms.', 'success': False}), 400
         
         if file.filename == '':
             return jsonify({'error': 'No file selected', 'success': False}), 400
             
         if file and allowed_file(file.filename):
             try:
-                # Create uploads directory if it doesn't exist
                 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
                 
-                # Generate unique filename
                 timestamp = datetime.utcnow().timestamp()
                 filename = secure_filename(f"plant_{current_user.id}_{timestamp}_{file.filename}")
                 filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-                
-                # Save the file
                 file.save(filepath)
-                print(f"File saved to: {filepath}")
+                print(f"✅ File saved to: {filepath}")
                 
-                # Generate image description for Cohere
                 image_description = f"Plant image uploaded by farmer showing a {description[:50]} plant"
-                
-                # Analyze with Cohere
                 analysis_result = analyze_plant_with_cohere(image_description, description)
                 
-                # Get raw response for display
                 raw_response = analysis_result.pop('raw_response', 'No raw response available')
                 
-                # Create disease report
                 report = DiseaseReport(
                     farmer_id=current_user.id,
                     plant_image=filename,
@@ -768,7 +601,7 @@ def detect_disease():
                 })
                 
             except Exception as e:
-                print(f"Error in disease detection: {str(e)}")
+                print(f"❌ Error in disease detection: {str(e)}")
                 return jsonify({'error': str(e), 'success': False}), 500
         else:
             return jsonify({'error': 'Invalid file type. Allowed: png, jpg, jpeg, gif', 'success': False}), 400
@@ -786,17 +619,14 @@ def farmer_weather():
     location = request.args.get('location', current_user.location or 'Nairobi')
     
     try:
-        # Current weather
         weather_url = f"http://api.openweathermap.org/data/2.5/weather?q={location}&appid={app.config['OPENWEATHER_API_KEY']}&units=metric"
         response = requests.get(weather_url)
         weather_data = response.json()
         
-        # 5-day forecast
         forecast_url = f"http://api.openweathermap.org/data/2.5/forecast?q={location}&appid={app.config['OPENWEATHER_API_KEY']}&units=metric"
         forecast_response = requests.get(forecast_url)
         forecast_data = forecast_response.json()
         
-        # Process forecast for daily aggregation
         daily_forecast = {}
         if 'list' in forecast_data:
             for item in forecast_data['list']:
@@ -811,7 +641,6 @@ def farmer_weather():
                         'rain': item.get('rain', {}).get('3h', 0)
                     }
         
-        # Generate farming recommendations based on weather
         recommendations = generate_farming_recommendations(weather_data, daily_forecast)
         
         return render_template('farmer/weather.html', 
@@ -831,7 +660,6 @@ def farmer_agrovets():
         flash('Access denied', 'error')
         return redirect(url_for('index'))
     
-    # Get all active agrovets
     agrovets = User.query.filter_by(
         user_type='agrovet',
         is_active=True
@@ -854,29 +682,24 @@ def generate_farming_recommendations(weather, forecast):
         humidity = weather['main']['humidity']
         conditions = weather['weather'][0]['description'].lower()
         
-        # Temperature-based recommendations
         if temp > 30:
             recommendations['irrigation'].append('Increase irrigation frequency - high temperatures detected')
             recommendations['general'].append('Provide shade for sensitive seedlings')
         elif temp < 15:
             recommendations['general'].append('Protect crops from cold stress - use mulch or row covers')
         
-        # Humidity-based recommendations
         if humidity > 70:
             recommendations['pest_disease'].append('High humidity - monitor for fungal diseases like late blight')
             recommendations['pest_disease'].append('Apply preventive fungicides on susceptible crops')
         elif humidity < 40:
             recommendations['irrigation'].append('Low humidity - increase misting for leafy vegetables')
         
-        # Rain-based recommendations
         if 'rain' in conditions:
             recommendations['planting'].append('Good time for transplanting - soil moisture is adequate')
             recommendations['general'].append('Check for waterlogging in poorly drained areas')
         
-        # Kenyan-specific recommendations
         recommendations['general'].append('Contact your local agrovet for region-specific inputs')
         
-        # Default recommendations if none generated
         if not any(recommendations.values()):
             recommendations['general'] = [
                 'Maintain regular irrigation schedule',
@@ -887,7 +710,6 @@ def generate_farming_recommendations(weather, forecast):
     return recommendations
 
 # ============ AGROVET ROUTES ============
-
 @app.route('/agrovet/dashboard')
 @login_required
 def agrovet_dashboard():
@@ -896,25 +718,21 @@ def agrovet_dashboard():
         flash('Access denied', 'error')
         return redirect(url_for('index'))
     
-    # Get statistics
     total_products = InventoryItem.query.filter_by(agrovet_id=current_user.id).count()
     low_stock_items = InventoryItem.query.filter_by(agrovet_id=current_user.id)\
         .filter(InventoryItem.quantity <= InventoryItem.reorder_level).count()
     total_customers = Customer.query.filter_by(agrovet_id=current_user.id).count()
     
-    # Today's sales
     today = datetime.utcnow().date()
     today_sales = Sale.query.filter_by(agrovet_id=current_user.id)\
         .filter(db.func.date(Sale.sale_date) == today).all()
     today_revenue = sum(sale.total_amount for sale in today_sales)
     
-    # Recent sales
     recent_sales = Sale.query.filter_by(agrovet_id=current_user.id)\
         .order_by(Sale.sale_date.desc())\
         .limit(10)\
         .all()
     
-    # Notifications
     notifications = Notification.query.filter_by(
         user_id=current_user.id, 
         is_read=False
@@ -1193,7 +1011,6 @@ def add_communication(customer_id):
     return redirect(url_for('view_customer', customer_id=customer_id))
 
 # ============ OFFICER ROUTES ============
-
 @app.route('/officer/dashboard')
 @login_required
 def officer_dashboard():
@@ -1202,13 +1019,11 @@ def officer_dashboard():
         flash('Access denied', 'error')
         return redirect(url_for('index'))
     
-    # Get all disease reports in the area
     disease_reports = DiseaseReport.query\
         .order_by(DiseaseReport.created_at.desc())\
         .limit(50)\
         .all()
     
-    # Get all farmers
     farmers = User.query.filter_by(user_type='farmer', is_active=True).all()
     
     return render_template('officer/dashboard.html',
@@ -1216,7 +1031,6 @@ def officer_dashboard():
                          farmers=farmers)
 
 # ============ INSTITUTION ROUTES ============
-
 @app.route('/institution/dashboard')
 @login_required
 def institution_dashboard():
@@ -1228,7 +1042,6 @@ def institution_dashboard():
     return render_template('institution/dashboard.html')
 
 # ============ SUPER ADMIN ROUTES ============
-
 @app.route('/admin/super/dashboard')
 @login_required
 @super_admin_required
@@ -1338,7 +1151,6 @@ def impersonate_user(user_id):
     return redirect(url_for('index'))
 
 # ============ AI CHAT ASSISTANT - BENFARM ============
-
 @app.route('/api/chat', methods=['POST'])
 @login_required
 def chat():
@@ -1355,15 +1167,13 @@ def chat():
             'Content-Type': 'application/json',
         }
         
-        # BenFarm's personality and knowledge prompt
         system_prompt = """You are BenFarm, an AI agricultural assistant created and specially trained by Benedict Odhiambo, a Kenyan agricultural expert (Phone: +254713593573). 
 
 YOUR PERSONALITY:
 - Name: BenFarm
 - Creator: Benedict Odhiambo
 - Expertise: Kenyan agriculture, crop diseases, livestock, sustainable farming
-- Tone: Friendly, professional, warm, and encouraging like a knowledgeable Kenyan farmer
-- Language: Use simple, clear English with occasional Swahili farming terms (e.g., "shamba", "mboga", "mazao")
+- Tone: Friendly, professional, warm, and encouraging
 
 YOUR CAPABILITIES:
 1. Diagnose plant diseases and pests affecting Kenyan crops
@@ -1371,25 +1181,16 @@ YOUR CAPABILITIES:
 3. Advise on farming practices suitable for different Kenyan regions
 4. Recommend planting seasons and crop varieties
 5. Help with livestock management
-6. Explain sustainable farming techniques
 
 IMPORTANT RULES:
 1. If you don't know something, be honest and suggest contacting Benedict directly at +254713593573
 2. If the user wants to speak to a human expert, immediately provide Benedict's contact: +254713593573
 3. Always prioritize organic/eco-friendly solutions when possible
 4. Reference Kenyan agrovets, KALRO, and local agricultural practices
-5. Be specific about Kenyan regions (Rift Valley, Central, Coast, Nyanza, Western, Eastern, North Eastern)
 
 GREETING STYLE:
 - Start with: "Habari yako! I'm BenFarm, your AI farming assistant 🤖🌱"
 - End with: "Karibu tena! Benedict and I are always here to help your shamba thrive!"
-
-RESPONSE FORMAT:
-- Keep responses concise but informative
-- Use bullet points for lists
-- Bold important information
-- Include emojis where appropriate (🌱 🌽 🐄 🌧️ ☀️ 🧑‍🌾)
-- End with: "Ubarikiwe! (Blessings!) - BenFarm 🤖"
 
 Now respond to this farmer's question: {message}"""
         
@@ -1409,7 +1210,6 @@ Now respond to this farmer's question: {message}"""
         if response.status_code == 200 and 'text' in result:
             ai_response = result['text']
             
-            # Check if user wants human expert
             human_keywords = ['human', 'person', 'speak', 'call', 'contact', 'benedict', 'expert', 'real person']
             if any(keyword in message.lower() for keyword in human_keywords):
                 ai_response += """
@@ -1418,7 +1218,6 @@ Now respond to this farmer's question: {message}"""
 You can reach Benedict Odhiambo directly for personalized assistance:
 • **Phone/WhatsApp**: +254713593573
 • **Specialization**: Kenyan agriculture, plant diseases, farm management
-• **Languages**: English, Swahili, Luo
 • **Availability**: Monday-Saturday, 8am-6pm EAT
 
 Feel free to call or send a message on WhatsApp! 🧑‍🌾"""
@@ -1444,6 +1243,7 @@ Feel free to call or send a message on WhatsApp! 🧑‍🌾"""
             'contact': '+254713593573'
         })
 
+# ============ NOTIFICATIONS ============
 @app.route('/notifications/mark-read/<int:notification_id>', methods=['POST'])
 @login_required
 def mark_notification_read(notification_id):
@@ -1458,8 +1258,54 @@ def mark_notification_read(notification_id):
     
     return jsonify({'success': True})
 
-# ============ TEMPLATE FILTERS ============
+# ============ SITEMAP FOR GOOGLE INDEXING ============
+@app.route('/sitemap.xml')
+def sitemap():
+    """Generate XML sitemap for Google indexing"""
+    urls = []
+    
+    # Static pages
+    static_pages = ['', 'login', 'register', 'farmer/dashboard', 'farmer/detect-disease', 
+                   'farmer/weather', 'farmer/agrovets']
+    
+    for page in static_pages:
+        urls.append({
+            'loc': url_for('index', _external=True) + (page if page else ''),
+            'lastmod': datetime.now().strftime('%Y-%m-%d'),
+            'changefreq': 'daily' if page == '' else 'weekly',
+            'priority': '1.0' if page == '' else '0.8'
+        })
+    
+    # Add community posts
+    try:
+        posts = CommunityPost.query.filter_by(is_public=True).all()
+        for post in posts:
+            urls.append({
+                'loc': url_for('community.view_post', post_id=post.id, _external=True),
+                'lastmod': post.updated_at.strftime('%Y-%m-%d') if post.updated_at else datetime.now().strftime('%Y-%m-%d'),
+                'changefreq': 'monthly',
+                'priority': '0.6'
+            })
+    except:
+        pass
+    
+    sitemap_xml = render_template('sitemap_template.xml', urls=urls)
+    response = make_response(sitemap_xml)
+    response.headers["Content-Type"] = "application/xml"
+    return response
 
+@app.route('/robots.txt')
+def robots():
+    """Serve robots.txt for search engines"""
+    robots_txt = """User-agent: *
+Allow: /
+Sitemap: https://benfarming.onrender.com/sitemap.xml
+"""
+    response = make_response(robots_txt)
+    response.headers["Content-Type"] = "text/plain"
+    return response
+
+# ============ TEMPLATE FILTERS ============
 @app.template_filter('datetime')
 def format_datetime(value):
     if value is None:
@@ -1473,14 +1319,6 @@ def format_currency(value):
         return "KES 0.00"
     return f"KES {value:,.2f}"
 
-# ============ FAVICON ============
-
-@app.route('/favicon.ico')
-def favicon():
-    return '', 404
-
-# ============ MAIN ============
-# ============ CUSTOM TEMPLATE FILTERS ============
 @app.template_filter('is_admin')
 def is_admin(user):
     """Check if user is an admin"""
@@ -1496,7 +1334,12 @@ def is_super_admin(user):
         return False
     admin = AdminUser.query.filter_by(email=user.email).first()
     return admin is not None and admin.is_super_admin
-    
+
+@app.route('/favicon.ico')
+def favicon():
+    return '', 404
+
+# ============ MAIN ============
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     debug = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
