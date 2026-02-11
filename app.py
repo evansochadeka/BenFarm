@@ -18,7 +18,34 @@ from functools import wraps
 app = Flask(__name__)
 app.config.from_object(Config)
 
-db.init_app(app)
+# At the TOP of app.py, after imports, BEFORE creating Flask app:
+from flask import Flask
+from flask_sqlalchemy import SQLAlchemy
+from flask_login import LoginManager
+from config import Config
+
+# ✅ CORRECT: Create db instance WITHOUT app first
+db = SQLAlchemy()
+login_manager = LoginManager()
+
+def create_app():
+    app = Flask(__name__)
+    app.config.from_object(Config)
+    
+    # ✅ Initialize extensions WITH the app
+    db.init_app(app)
+    login_manager.init_app(app)
+    login_manager.login_view = 'login'
+    
+    # Register blueprints
+    from admin_routes import admin_bp
+    from community_routes import community_bp
+    app.register_blueprint(admin_bp)
+    app.register_blueprint(community_bp)
+    
+    return app
+
+app = create_app()
 
 # Initialize login manager
 login_manager = LoginManager()
