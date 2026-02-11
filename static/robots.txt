@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://elmedwellmindsolutions.onrender.com/sitemap.xml
