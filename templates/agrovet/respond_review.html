@@ -1,0 +1,83 @@
+{% extends "components/base.html" %}
+
+{% block title %}Respond to Review - {{ current_user.full_name }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-reply me-2"></i> Respond to Customer Review
+                </h5>
+            </div>
+            <div class="card-body">
+                <!-- Original Review -->
+                <div class="bg-light p-4 rounded mb-4">
+                    <div class="d-flex justify-content-between align-items-start mb-3">
+                        <div>
+                            <h6 class="mb-1">{{ review.title }}</h6>
+                            <div class="rating mb-2">
+                                {% for i in range(5) %}
+                                    {% if i < review.rating %}
+                                        <i class="fas fa-star text-warning"></i>
+                                    {% else %}
+                                        <i class="far fa-star text-warning"></i>
+                                    {% endif %}
+                                {% endfor %}
+                                <span class="ms-2">{{ review.rating }}.0</span>
+                            </div>
+                        </div>
+                        <div class="text-end">
+                            <strong>{{ review.user.full_name }}</strong>
+                            <br>
+                            <small class="text-muted">{{ review.created_at|datetime }}</small>
+                        </div>
+                    </div>
+                    <p class="mb-0">{{ review.content }}</p>
+                </div>
+                
+                <!-- Response Form -->
+                <form method="POST" action="{{ url_for('agrovet_respond_review', review_id=review.id) }}">
+                    <div class="mb-3">
+                        <label for="response" class="form-label fw-bold">
+                            Your Response <span class="text-danger">*</span>
+                        </label>
+                        <textarea class="form-control" id="response" name="response" rows="5" 
+                                  placeholder="Thank the customer for their feedback and address any concerns..." 
+                                  required></textarea>
+                        <div class="form-text">
+                            A professional, courteous response shows you value customer feedback.
+                        </div>
+                    </div>
+                    
+                    <div class="d-flex justify-content-end gap-2">
+                        <a href="{{ url_for('agrovet_reviews') }}" class="btn btn-secondary">
+                            Cancel
+                        </a>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-paper-plane me-2"></i> Post Response
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <!-- Tips for Responding -->
+        <div class="card mt-4 bg-light">
+            <div class="card-body">
+                <h6 class="card-title">
+                    <i class="fas fa-lightbulb text-warning me-2"></i> Tips for Responding to Reviews
+                </h6>
+                <ul class="small mb-0">
+                    <li class="mb-1">Thank the customer for their feedback, whether positive or negative</li>
+                    <li class="mb-1">Address specific points mentioned in the review</li>
+                    <li class="mb-1">For negative reviews, apologize and offer to make things right</li>
+                    <li class="mb-1">Keep your response professional and courteous</li>
+                    <li class="mb-1">Avoid getting defensive or argumentative</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

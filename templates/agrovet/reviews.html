@@ -1,0 +1,274 @@
+{% extends "components/base.html" %}
+
+{% block title %}Reviews - {{ agrovet.full_name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .review-card {
+        border: none;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        margin-bottom: 20px;
+        transition: transform 0.2s;
+    }
+    .review-card:hover {
+        transform: translateX(5px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    .rating {
+        color: #ffc107;
+    }
+    .rating-number {
+        background: #28a745;
+        color: white;
+        padding: 8px 16px;
+        border-radius: 30px;
+        font-weight: bold;
+        display: inline-block;
+    }
+    .review-stats {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 30px;
+        border-radius: 15px;
+        margin-bottom: 30px;
+    }
+    .response-box {
+        background: #f8f9fa;
+        border-left: 4px solid #28a745;
+        padding: 15px;
+        margin-top: 15px;
+        border-radius: 0 8px 8px 0;
+    }
+    .verified-purchase {
+        color: #28a745;
+        font-size: 0.85rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <!-- Reviews Header -->
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1 class="h3 mb-0">
+                <i class="fas fa-star text-warning me-2"></i> 
+                Customer Reviews
+            </h1>
+            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#writeReviewModal">
+                <i class="fas fa-pen me-2"></i> Write a Review
+            </button>
+        </div>
+        
+        <!-- Reviews List -->
+        {% if reviews %}
+            {% for review in reviews %}
+            <div class="card review-card">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start mb-3">
+                        <div>
+                            <h5 class="mb-1">{{ review.title }}</h5>
+                            <div class="d-flex align-items-center">
+                                <div class="me-3">
+                                    {% for i in range(5) %}
+                                        {% if i < review.rating %}
+                                            <i class="fas fa-star rating"></i>
+                                        {% else %}
+                                            <i class="far fa-star rating"></i>
+                                        {% endif %}
+                                    {% endfor %}
+                                </div>
+                                <span class="fw-bold">{{ review.rating }}.0</span>
+                            </div>
+                        </div>
+                        <div class="text-end">
+                            <strong>{{ review.user.full_name }}</strong>
+                            <br>
+                            <small class="text-muted">{{ review.created_at|datetime }}</small>
+                        </div>
+                    </div>
+                    
+                    <p class="mb-2">{{ review.content }}</p>
+                    
+                    {% if review.verified_purchase %}
+                    <p class="verified-purchase mb-2">
+                        <i class="fas fa-check-circle"></i> Verified Purchase
+                    </p>
+                    {% endif %}
+                    
+                    <!-- Agrovet Response -->
+                    {% if review.response %}
+                    <div class="response-box">
+                        <div class="d-flex align-items-center mb-2">
+                            <i class="fas fa-store text-success me-2"></i>
+                            <strong>{{ agrovet.full_name }}'s Response</strong>
+                            <small class="text-muted ms-2">{{ review.response_date|datetime }}</small>
+                        </div>
+                        <p class="mb-0">{{ review.response }}</p>
+                    </div>
+                    {% endif %}
+                    
+                    <!-- Helpful Button -->
+                    <div class="d-flex justify-content-end align-items-center mt-3">
+                        <button class="btn btn-sm btn-outline-success" 
+                                onclick="markHelpful('{{ review.id }}')"
+                                {% if not current_user.is_authenticated %}disabled{% endif %}>
+                            <i class="far fa-thumbs-up me-1"></i> 
+                            Helpful ({{ review.helpful_count or 0 }})
+                        </button>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+            <div class="alert alert-info">
+                <i class="fas fa-info-circle me-2"></i>
+                No reviews yet. Be the first to review this agrovet!
+            </div>
+        {% endif %}
+    </div>
+    
+    <!-- Sidebar - Rating Summary -->
+    <div class="col-md-4">
+        <div class="card sticky-top" style="top: 20px;">
+            <div class="card-body text-center">
+                <h5 class="mb-3">Overall Rating</h5>
+                <div class="display-1 fw-bold text-warning mb-2">
+                    {{ "%.1f"|format(stats.average) }}
+                </div>
+                <div class="mb-3">
+                    {% for i in range(5) %}
+                        {% if i < stats.average|round(0, 'floor') %}
+                            <i class="fas fa-star rating fa-2x"></i>
+                        {% elif i < stats.average %}
+                            <i class="fas fa-star-half-alt rating fa-2x"></i>
+                        {% else %}
+                            <i class="far fa-star rating fa-2x"></i>
+                        {% endif %}
+                    {% endfor %}
+                </div>
+                <p class="text-muted">Based on {{ stats.count }} reviews</p>
+                
+                <hr>
+                
+                <div class="text-start">
+                    <h6 class="mb-3">Rating Breakdown</h6>
+                    {% for i in range(5, 0, -1) %}
+                    <div class="d-flex align-items-center mb-2">
+                        <span class="me-2" style="width: 30px;">{{ i }} ★</span>
+                        <div class="progress flex-grow-1" style="height: 8px;">
+                            <div class="progress-bar bg-warning" 
+                                 style="width: {{ stats.breakdown[i] if stats.breakdown else 0 }}%"></div>
+                        </div>
+                        <span class="ms-2 small">{{ stats.breakdown[i] if stats.breakdown else 0 }}%</span>
+                    </div>
+                    {% endfor %}
+                </div>
+                
+                <hr>
+                
+                <div class="text-start">
+                    <h6 class="mb-3">Agrovet Information</h6>
+                    <p class="mb-1">
+                        <i class="fas fa-map-marker-alt text-muted me-2"></i> 
+                        {{ agrovet.location or 'Location not specified' }}
+                    </p>
+                    <p class="mb-1">
+                        <i class="fas fa-calendar-alt text-muted me-2"></i>
+                        Member since {{ agrovet.created_at.strftime('%Y') }}
+                    </p>
+                    {% if agrovet.phone_number %}
+                    <p class="mb-0">
+                        <i class="fas fa-phone-alt text-muted me-2"></i>
+                        {{ agrovet.phone_number }}
+                    </p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Write Review Modal -->
+<div class="modal fade" id="writeReviewModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title">
+                    <i class="fas fa-star me-2"></i> Write a Review
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="POST" action="{{ url_for('farmer_write_review', agrovet_id=agrovet.id) }}">
+                <div class="modal-body">
+                    {% if not current_user.is_authenticated %}
+                    <div class="alert alert-warning">
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        Please <a href="{{ url_for('login') }}">login</a> to write a review.
+                    </div>
+                    {% else %}
+                    <div class="mb-3">
+                        <label class="form-label">Your Rating <span class="text-danger">*</span></label>
+                        <div class="rating-input">
+                            {% for i in range(1, 6) %}
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="rating" 
+                                       id="star{{ i }}" value="{{ i }}" required>
+                                <label class="form-check-label" for="star{{ i }}">
+                                    {% for j in range(i) %}★{% endfor %}
+                                </label>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="review_title" class="form-label">Review Title <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="review_title" name="title" 
+                               placeholder="Summarize your experience" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="review_content" class="form-label">Your Review <span class="text-danger">*</span></label>
+                        <textarea class="form-control" id="review_content" name="content" rows="4" 
+                                  placeholder="Share your experience with this agrovet..." required></textarea>
+                    </div>
+                    
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" id="verified_purchase" name="verified_purchase">
+                        <label class="form-check-label" for="verified_purchase">
+                            I have purchased from this agrovet
+                        </label>
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    {% if current_user.is_authenticated %}
+                    <button type="submit" class="btn btn-success">
+                        <i class="fas fa-paper-plane me-2"></i> Submit Review
+                    </button>
+                    {% endif %}
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+function markHelpful(reviewId) {
+    fetch('/review/' + reviewId + '/helpful', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        }
+    });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,201 @@
+{% extends "components/base.html" %}
+
+{% block title %}Orders Management - {{ current_user.full_name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">
+        <i class="fas fa-truck me-2"></i> Customer Orders
+    </h1>
+    <div>
+        <select class="form-select" id="statusFilter" onchange="filterOrders()">
+            <option value="all">All Orders</option>
+            <option value="pending">Pending</option>
+            <option value="confirmed">Confirmed</option>
+            <option value="processing">Processing</option>
+            <option value="ready">Ready for Pickup</option>
+            <option value="completed">Completed</option>
+            <option value="cancelled">Cancelled</option>
+        </select>
+    </div>
+</div>
+
+{% if orders %}
+<div class="row">
+    {% for order in orders %}
+    <div class="col-12 mb-3 order-item" data-status="{{ order.status }}">
+        <div class="card">
+            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                <div>
+                    <strong>Order #{{ order.id }}</strong>
+                    <span class="text-muted ms-2">{{ order.created_at|datetime }}</span>
+                </div>
+                <div>
+                    <span class="badge bg-{{ 
+                        'warning' if order.status == 'pending' else
+                        'info' if order.status == 'confirmed' else
+                        'primary' if order.status == 'processing' else
+                        'success' if order.status == 'ready' else
+                        'success' if order.status == 'completed' else
+                        'danger'
+                    }}">{{ order.status|upper }}</span>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3">
+                        <h6 class="text-muted">Customer</h6>
+                        <p class="mb-1"><strong>{{ order.customer.full_name }}</strong></p>
+                        {% if order.customer.phone_number %}
+                        <p class="mb-1">
+                            <a href="tel:{{ order.customer.phone_number }}" class="text-decoration-none">
+                                <i class="fas fa-phone-alt me-1"></i> {{ order.customer.phone_number }}
+                            </a>
+                        </p>
+                        <a href="https://wa.me/{{ order.customer.phone_number|replace('+', '')|replace(' ', '') }}" 
+                           target="_blank" class="btn btn-sm btn-success">
+                            <i class="fab fa-whatsapp me-1"></i> WhatsApp
+                        </a>
+                        {% endif %}
+                    </div>
+                    <div class="col-md-3">
+                        <h6 class="text-muted">Order Details</h6>
+                        <p class="mb-1">Items: {{ order.items|length }}</p>
+                        <p class="mb-1">Total: <strong>KSh {{ "%.2f"|format(order.total) }}</strong></p>
+                        {% if order.notes %}
+                        <p class="mb-0 small text-muted">
+                            <i class="fas fa-sticky-note me-1"></i> {{ order.notes }}
+                        </p>
+                        {% endif %}
+                    </div>
+                    <div class="col-md-3">
+                        <h6 class="text-muted">Actions</h6>
+                        <div class="btn-group">
+                            <button class="btn btn-sm btn-outline-primary dropdown-toggle" 
+                                    data-bs-toggle="dropdown">
+                                Update Status
+                            </button>
+                            <ul class="dropdown-menu">
+                                <li>
+                                    <a class="dropdown-item" href="#" onclick="updateOrderStatus({{ order.id }}, 'confirmed')">
+                                        Confirm Order
+                                    </a>
+                                </li>
+                                <li>
+                                    <a class="dropdown-item" href="#" onclick="updateOrderStatus({{ order.id }}, 'processing')">
+                                        Processing
+                                    </a>
+                                </li>
+                                <li>
+                                    <a class="dropdown-item" href="#" onclick="updateOrderStatus({{ order.id }}, 'ready')">
+                                        Ready for Pickup
+                                    </a>
+                                </li>
+                                <li>
+                                    <a class="dropdown-item" href="#" onclick="updateOrderStatus({{ order.id }}, 'completed')">
+                                        Complete Order
+                                    </a>
+                                </li>
+                                <li><hr class="dropdown-divider"></li>
+                                <li>
+                                    <a class="dropdown-item text-danger" href="#" onclick="updateOrderStatus({{ order.id }}, 'cancelled')">
+                                        Cancel Order
+                                    </a>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <h6 class="text-muted">Customer Review</h6>
+                        {% if order.review %}
+                        <div class="rating">
+                            {% for i in range(5) %}
+                                {% if i < order.review.rating %}
+                                    <i class="fas fa-star text-warning"></i>
+                                {% else %}
+                                    <i class="far fa-star text-warning"></i>
+                                {% endif %}
+                            {% endfor %}
+                        </div>
+                        <p class="small mb-0">{{ order.review.title }}</p>
+                        {% else %}
+                        <span class="badge bg-secondary">No review yet</span>
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <!-- Order Items -->
+                <div class="mt-3">
+                    <button class="btn btn-link btn-sm" type="button" 
+                            data-bs-toggle="collapse" data-bs-target="#orderItems{{ order.id }}">
+                        <i class="fas fa-chevron-down me-1"></i> View Items
+                    </button>
+                    <div class="collapse mt-2" id="orderItems{{ order.id }}">
+                        <div class="table-responsive">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Product</th>
+                                        <th>Quantity</th>
+                                        <th>Price</th>
+                                        <th>Subtotal</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for item in order.items %}
+                                    <tr>
+                                        <td>{{ item.product_name }}</td>
+                                        <td>{{ item.quantity }}</td>
+                                        <td>KSh {{ "%.2f"|format(item.price) }}</td>
+                                        <td>KSh {{ "%.2f"|format(item.price * item.quantity) }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="alert alert-info">
+    <i class="fas fa-inbox me-2"></i> No orders yet.
+</div>
+{% endif %}
+
+<script>
+function updateOrderStatus(orderId, status) {
+    fetch('/agrovet/orders/' + orderId + '/status', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ status: status })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Error updating order status');
+        }
+    });
+}
+
+function filterOrders() {
+    const status = document.getElementById('statusFilter').value;
+    const orders = document.querySelectorAll('.order-item');
+    
+    orders.forEach(order => {
+        if (status === 'all' || order.dataset.status === status) {
+            order.style.display = 'block';
+        } else {
+            order.style.display = 'none';
+        }
+    });
+}
+</script>
+{% endblock %}

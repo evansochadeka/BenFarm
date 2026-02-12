@@ -1,0 +1,468 @@
+{% extends "components/base.html" %}
+
+{% block title %}{{ agrovet.full_name }} - Products - Adiseware{% endblock %}
+
+{% block extra_css %}
+<style>
+    .product-card {
+        transition: transform 0.2s, box-shadow 0.2s;
+        border: none;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        height: 100%;
+    }
+    .product-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 8px 16px rgba(0,0,0,0.15);
+    }
+    .product-image {
+        height: 200px;
+        object-fit: cover;
+        border-radius: 10px 10px 0 0;
+    }
+    .agrovet-header {
+        background: linear-gradient(135deg, #1e3c2c 0%, #2d5a3b 100%);
+        color: white;
+        padding: 30px;
+        border-radius: 15px;
+        margin-bottom: 30px;
+    }
+    .cart-sidebar {
+        position: sticky;
+        top: 20px;
+        background: white;
+        border-radius: 15px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        padding: 20px;
+    }
+    .cart-item {
+        background: #f8f9fa;
+        border-radius: 8px;
+        padding: 12px;
+        margin-bottom: 10px;
+        border-left: 4px solid #28a745;
+    }
+    .contact-btn {
+        width: 100%;
+        margin-bottom: 10px;
+        padding: 12px;
+        font-weight: 600;
+        border-radius: 10px;
+    }
+    .rating {
+        color: #ffc107;
+    }
+    .verified-badge {
+        color: #28a745;
+        font-size: 0.9rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Agrovet Header -->
+<div class="agrovet-header">
+    <div class="row align-items-center">
+        <div class="col-md-8">
+            <div class="d-flex align-items-center">
+                {% if agrovet.profile_picture %}
+                <img src="{{ url_for('static', filename='uploads/' + agrovet.profile_picture) }}" 
+                     alt="{{ agrovet.full_name }}" 
+                     class="rounded-circle me-4" 
+                     style="width: 80px; height: 80px; object-fit: cover; border: 3px solid white;">
+                {% else %}
+                <div class="rounded-circle bg-white text-success d-flex align-items-center justify-content-center me-4" 
+                     style="width: 80px; height: 80px;">
+                    <i class="fas fa-store fa-3x"></i>
+                </div>
+                {% endif %}
+                <div>
+                    <h1 class="h2 mb-2">{{ agrovet.full_name }}</h1>
+                    <div class="mb-2">
+                        {% set avg_rating = agrovet.get_review_stats().average %}
+                        {% set review_count = agrovet.get_review_stats().count %}
+                        {% for i in range(5) %}
+                            {% if i < avg_rating|round(0, 'floor') %}
+                                <i class="fas fa-star rating"></i>
+                            {% elif i < avg_rating %}
+                                <i class="fas fa-star-half-alt rating"></i>
+                            {% else %}
+                                <i class="far fa-star rating"></i>
+                            {% endif %}
+                        {% endfor %}
+                        <span class="ms-2 text-white">({{ review_count }} reviews)</span>
+                        {% if agrovet.is_verified %}
+                        <span class="badge bg-success ms-2">
+                            <i class="fas fa-check-circle"></i> Verified Agrovet
+                        </span>
+                        {% endif %}
+                    </div>
+                    <p class="mb-1"><i class="fas fa-map-marker-alt me-2"></i> {{ agrovet.location or 'Location not specified' }}</p>
+                    <p class="mb-0"><i class="fas fa-clock me-2"></i> Member since {{ agrovet.created_at.strftime('%B %Y') }}</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="bg-white bg-opacity-10 rounded p-3">
+                <h6 class="text-white-50 mb-2">Contact Agrovet</h6>
+                {% if agrovet.phone_number %}
+                <a href="tel:{{ agrovet.phone_number }}" class="btn btn-light contact-btn">
+                    <i class="fas fa-phone-alt me-2"></i> Call Now
+                </a>
+                <a href="https://wa.me/{{ agrovet.phone_number|replace('+', '')|replace(' ', '') }}" 
+                   target="_blank" class="btn btn-success contact-btn">
+                    <i class="fab fa-whatsapp me-2"></i> WhatsApp
+                </a>
+                {% else %}
+                <p class="text-white mb-0">No contact available</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Products Grid -->
+    <div class="col-lg-8">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2 class="h4 mb-0">
+                <i class="fas fa-boxes me-2"></i> Available Products
+            </h2>
+            <div>
+                <select class="form-select" id="categoryFilter" style="width: auto; display: inline-block;">
+                    <option value="all">All Categories</option>
+                    <option value="Seeds">Seeds</option>
+                    <option value="Fertilizers">Fertilizers</option>
+                    <option value="Pesticides">Pesticides</option>
+                    <option value="Tools">Tools</option>
+                    <option value="Equipment">Equipment</option>
+                </select>
+            </div>
+        </div>
+        
+        {% if products %}
+        <div class="row" id="productsContainer">
+            {% for product in products %}
+            <div class="col-md-6 col-lg-4 mb-4 product-item" data-category="{{ product.category or 'Other' }}">
+                <div class="card product-card">
+                    {% if product.image %}
+                    <img src="{{ url_for('static', filename='uploads/' + product.image) }}" 
+                         class="product-image" alt="{{ product.product_name }}">
+                    {% else %}
+                    <div class="product-image bg-light d-flex align-items-center justify-content-center">
+                        <i class="fas fa-box fa-4x text-secondary"></i>
+                    </div>
+                    {% endif %}
+                    <div class="card-body">
+                        <h5 class="card-title">{{ product.product_name }}</h5>
+                        <p class="card-text text-muted small">{{ product.description|truncate(80) }}</p>
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="badge bg-secondary">{{ product.category or 'General' }}</span>
+                            <span class="h5 mb-0 text-success">KSh {{ "%.2f"|format(product.price) }}</span>
+                        </div>
+                        <p class="small text-muted mb-2">
+                            <i class="fas fa-boxes me-1"></i> Stock: 
+                            <span class="{% if product.quantity < 10 %}text-danger fw-bold{% endif %}">
+                                {{ product.quantity }} {{ product.unit or 'units' }}
+                            </span>
+                        </p>
+                        {% if product.quantity > 0 %}
+                        <div class="d-grid">
+                            <button class="btn btn-success btn-sm" 
+                                    onclick="addToCart('{{ product.id }}', '{{ product.product_name|escapejs }}', {{ product.price }}, {{ product.quantity }})">
+                                <i class="fas fa-cart-plus me-1"></i> Add to Cart
+                            </button>
+                        </div>
+                        {% else %}
+                        <button class="btn btn-secondary btn-sm" disabled>
+                            <i class="fas fa-times-circle me-1"></i> Out of Stock
+                        </button>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="alert alert-info">
+            <i class="fas fa-info-circle me-2"></i> No products available from this agrovet at the moment.
+        </div>
+        {% endif %}
+    </div>
+    
+    <!-- Shopping Cart Sidebar -->
+    <div class="col-lg-4">
+        <div class="cart-sidebar">
+            <h5 class="mb-3">
+                <i class="fas fa-shopping-cart text-success me-2"></i> Your Cart
+                <span class="badge bg-success rounded-pill ms-2" id="cartCount">0</span>
+            </h5>
+            
+            <div id="cartItemsContainer" style="max-height: 400px; overflow-y: auto;">
+                <p class="text-muted text-center py-4">Your cart is empty</p>
+            </div>
+            
+            <hr>
+            
+            <div class="d-flex justify-content-between mb-3">
+                <strong>Total:</strong>
+                <strong class="text-success" id="cartTotal">KSh 0.00</strong>
+            </div>
+            
+            <div class="mb-3">
+                <label class="form-label">Order Notes (Optional)</label>
+                <textarea class="form-control" id="orderNotes" rows="2" 
+                          placeholder="Any special instructions..."></textarea>
+            </div>
+            
+            <div class="d-grid gap-2">
+                <button class="btn btn-success btn-lg" id="checkoutBtn" onclick="placeOrder()" disabled>
+                    <i class="fas fa-check-circle me-2"></i> Place Order
+                </button>
+                <button class="btn btn-outline-secondary" onclick="clearCart()">
+                    <i class="fas fa-trash-alt me-2"></i> Clear Cart
+                </button>
+            </div>
+            
+            <hr>
+            
+            <div class="small text-muted">
+                <i class="fas fa-info-circle me-1"></i> 
+                Orders will be sent directly to the agrovet. They will contact you for pickup/delivery.
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Order Confirmation Modal -->
+<div class="modal fade" id="orderModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title">
+                    <i class="fas fa-check-circle me-2"></i> Order Placed Successfully!
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="text-center mb-4">
+                    <i class="fas fa-check-circle fa-4x text-success"></i>
+                    <h6 class="mt-3">Your order has been sent to {{ agrovet.full_name }}</h6>
+                </div>
+                
+                <div class="alert alert-info">
+                    <i class="fas fa-clock me-2"></i>
+                    <strong>What happens next?</strong>
+                    <ol class="mt-2 mb-0">
+                        <li>The agrovet will receive your order immediately</li>
+                        <li>They will contact you via phone to confirm availability</li>
+                        <li>Arrange pickup or delivery</li>
+                    </ol>
+                </div>
+                
+                <div class="d-flex justify-content-between align-items-center bg-light p-3 rounded">
+                    <div>
+                        <strong>Order Total:</strong>
+                    </div>
+                    <div>
+                        <span class="h4 text-success" id="orderTotalDisplay">KSh 0.00</span>
+                    </div>
+                </div>
+                
+                <hr>
+                
+                <div class="text-center">
+                    <p class="mb-2">Need immediate assistance?</p>
+                    {% if agrovet.phone_number %}
+                    <a href="tel:{{ agrovet.phone_number }}" class="btn btn-primary me-2">
+                        <i class="fas fa-phone-alt me-1"></i> Call Now
+                    </a>
+                    <a href="https://wa.me/{{ agrovet.phone_number|replace('+', '')|replace(' ', '') }}" 
+                       target="_blank" class="btn btn-success">
+                        <i class="fab fa-whatsapp me-1"></i> WhatsApp
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Continue Shopping</button>
+                <a href="{{ url_for('farmer_orders') }}" class="btn btn-primary">View My Orders</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Shopping Cart Functions
+let cart = JSON.parse(localStorage.getItem('agrovet_cart_{{ agrovet.id }}')) || [];
+
+function addToCart(productId, name, price, stock) {
+    const existingItem = cart.find(item => item.id === productId);
+    
+    if (existingItem) {
+        if (existingItem.quantity < stock) {
+            existingItem.quantity++;
+        } else {
+            alert('Cannot add more - insufficient stock');
+            return;
+        }
+    } else {
+        cart.push({
+            id: productId,
+            name: name,
+            price: price,
+            quantity: 1,
+            stock: stock
+        });
+    }
+    
+    saveCart();
+    updateCartUI();
+    
+    // Visual feedback
+    const btn = event.target.closest('button');
+    btn.innerHTML = '<i class="fas fa-check me-1"></i> Added!';
+    setTimeout(() => {
+        btn.innerHTML = '<i class="fas fa-cart-plus me-1"></i> Add to Cart';
+    }, 1000);
+}
+
+function removeFromCart(productId) {
+    cart = cart.filter(item => item.id !== productId);
+    saveCart();
+    updateCartUI();
+}
+
+function updateQuantity(productId, change) {
+    const item = cart.find(item => item.id === productId);
+    if (item) {
+        const newQuantity = item.quantity + change;
+        if (newQuantity > 0 && newQuantity <= item.stock) {
+            item.quantity = newQuantity;
+            saveCart();
+            updateCartUI();
+        }
+    }
+}
+
+function saveCart() {
+    localStorage.setItem('agrovet_cart_{{ agrovet.id }}', JSON.stringify(cart));
+}
+
+function updateCartUI() {
+    const cartItemsContainer = document.getElementById('cartItemsContainer');
+    const cartTotal = document.getElementById('cartTotal');
+    const cartCount = document.getElementById('cartCount');
+    const checkoutBtn = document.getElementById('checkoutBtn');
+    
+    if (cart.length === 0) {
+        cartItemsContainer.innerHTML = '<p class="text-muted text-center py-4">Your cart is empty</p>';
+        cartTotal.textContent = 'KSh 0.00';
+        cartCount.textContent = '0';
+        checkoutBtn.disabled = true;
+        return;
+    }
+    
+    let total = 0;
+    let count = 0;
+    let html = '';
+    
+    cart.forEach(item => {
+        const subtotal = item.price * item.quantity;
+        total += subtotal;
+        count += item.quantity;
+        
+        html += `
+            <div class="cart-item">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <strong>${item.name}</strong><br>
+                        <small class="text-muted">KSh ${item.price.toFixed(2)} × ${item.quantity}</small>
+                    </div>
+                    <div>
+                        <strong class="text-success">KSh ${subtotal.toFixed(2)}</strong>
+                    </div>
+                </div>
+                <div class="d-flex justify-content-end mt-2">
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-outline-secondary" onclick="updateQuantity('${item.id}', -1)">−</button>
+                        <span class="btn btn-light disabled">${item.quantity}</span>
+                        <button class="btn btn-outline-secondary" onclick="updateQuantity('${item.id}', 1)">+</button>
+                        <button class="btn btn-outline-danger" onclick="removeFromCart('${item.id}')">
+                            <i class="fas fa-trash-alt"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    
+    cartItemsContainer.innerHTML = html;
+    cartTotal.textContent = `KSh ${total.toFixed(2)}`;
+    cartCount.textContent = count;
+    checkoutBtn.disabled = false;
+}
+
+function clearCart() {
+    if (confirm('Clear all items from your cart?')) {
+        cart = [];
+        saveCart();
+        updateCartUI();
+    }
+}
+
+function placeOrder() {
+    if (cart.length === 0) return;
+    
+    const orderData = {
+        agrovet_id: {{ agrovet.id }},
+        items: cart,
+        notes: document.getElementById('orderNotes').value,
+        total: cart.reduce((sum, item) => sum + (item.price * item.quantity), 0)
+    };
+    
+    fetch('/farmer/place-order', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(orderData)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            document.getElementById('orderTotalDisplay').textContent = `KSh ${orderData.total.toFixed(2)}`;
+            const orderModal = new bootstrap.Modal(document.getElementById('orderModal'));
+            orderModal.show();
+            
+            // Clear cart after successful order
+            cart = [];
+            saveCart();
+            updateCartUI();
+        } else {
+            alert('Error placing order: ' + data.error);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error placing order. Please try again.');
+    });
+}
+
+// Category Filter
+document.getElementById('categoryFilter').addEventListener('change', function() {
+    const category = this.value;
+    const products = document.querySelectorAll('.product-item');
+    
+    products.forEach(product => {
+        if (category === 'all' || product.dataset.category === category) {
+            product.style.display = 'block';
+        } else {
+            product.style.display = 'none';
+        }
+    });
+});
+
+// Initialize cart on page load
+updateCartUI();
+</script>
+{% endblock %}
