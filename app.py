@@ -2,8 +2,7 @@ import os
 import json
 import re
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session, make_response
-from flask_login import LoginManager, login_user, logout_user, login_required, current_user
-from flask_sqlalchemy import SQLAlchemy
+from flask_login import login_user, logout_user, login_required, current_user
 from werkzeug.utils import secure_filename
 from datetime import datetime, timedelta
 import requests
@@ -11,9 +10,8 @@ from config import Config
 from functools import wraps
 from sqlalchemy import inspect
 
-# ============ INITIALIZE EXTENSIONS ============
-db = SQLAlchemy()
-login_manager = LoginManager()
+# ============ IMPORT SHARED EXTENSIONS ============
+from extensions import db, login_manager
 
 # ============ CREATE APP ============
 app = Flask(__name__)
