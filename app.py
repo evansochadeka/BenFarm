@@ -8,8 +8,7 @@ from datetime import datetime, timedelta
 import requests
 from config import Config
 from functools import wraps
-from sqlalchemy import inspect
-from flask_socketio import SocketIO, emit, join_room, leave_room
+from sqlalchemy import inspect, text
 
 # ============ IMPORT SHARED EXTENSIONS ============
 from extensions import db, login_manager
@@ -22,9 +21,6 @@ app.config.from_object(Config)
 db.init_app(app)
 login_manager.init_app(app)
 login_manager.login_view = 'login'
-
-# ============ INITIALIZE SOCKETIO ============
-socketio = SocketIO(app, cors_allowed_origins="*")
 
 # ============ IMPORT MODELS AFTER DB INIT ============
 from models import User, AdminUser, InventoryItem, Customer, Sale, SaleItem, Communication, DiseaseReport, Notification, WeatherData, CommunityPost, PostLike, ReplyLike, ReplyMention, DirectMessage, FAQ, PostTag, CommunityReply, Review, Order, OrderItem, ChatMessage
@@ -437,16 +433,81 @@ def parse_cohere_analysis(analysis_text):
     
     return result
 
-# ============ DATABASE AUTO-CREATION & SUPERADMIN FIX ============
+# ============ DATABASE AUTO-CREATION - FIXED TO CREATE ALL TABLES ============
 with app.app_context():
     try:
         inspector = inspect(db.engine)
-        if not inspector.has_table('users'):
-            print("📦 Creating database tables for the first time...")
-            db.create_all()
-            print("✅ Database tables created successfully!")
         
-        # Force create/update superadmin
+        # Check if users table exists
+        users_table_exists = inspector.has_table('users')
+        
+        if not users_table_exists:
+            print("📦 Creating ALL database tables for the first time...")
+            db.create_all()
+            print("✅ All database tables created successfully!")
+        else:
+            print("✅ Users table already exists - checking for missing tables...")
+            
+            # List of all tables that should exist
+            all_tables = [
+                'users', 'admin_users', 'inventory_items', 'customers', 'sales', 
+                'sale_items', 'communications', 'disease_reports', 'notifications', 
+                'weather_data', 'reviews', 'community_posts', 'community_replies', 
+                'post_tags', 'post_likes', 'reply_likes', 'reply_mentions', 
+                'direct_messages', 'faqs', 'orders', 'order_items', 'chat_messages'
+            ]
+            
+            # Check each table and create if missing
+            for table_name in all_tables:
+                if not inspector.has_table(table_name):
+                    print(f"📦 Creating missing table: {table_name}")
+                    try:
+                        if table_name == 'orders':
+                            db.session.execute(text("""
+                                CREATE TABLE IF NOT EXISTS orders (
+                                    id SERIAL PRIMARY KEY,
+                                    farmer_id INTEGER NOT NULL REFERENCES users(id),
+                                    agrovet_id INTEGER NOT NULL REFERENCES users(id),
+                                    total FLOAT NOT NULL,
+                                    status VARCHAR(50) DEFAULT 'pending',
+                                    notes TEXT,
+                                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                                )
+                            """))
+                        elif table_name == 'order_items':
+                            db.session.execute(text("""
+                                CREATE TABLE IF NOT EXISTS order_items (
+                                    id SERIAL PRIMARY KEY,
+                                    order_id INTEGER NOT NULL REFERENCES orders(id),
+                                    product_id INTEGER REFERENCES inventory_items(id),
+                                    product_name VARCHAR(200) NOT NULL,
+                                    quantity INTEGER NOT NULL,
+                                    price FLOAT NOT NULL,
+                                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                                )
+                            """))
+                        elif table_name == 'chat_messages':
+                            db.session.execute(text("""
+                                CREATE TABLE IF NOT EXISTS chat_messages (
+                                    id SERIAL PRIMARY KEY,
+                                    user_id INTEGER NOT NULL REFERENCES users(id),
+                                    room VARCHAR(50) DEFAULT 'general',
+                                    message TEXT NOT NULL,
+                                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                                )
+                            """))
+                        else:
+                            # For other tables, let SQLAlchemy create them
+                            db.create_all()
+                            break
+                        db.session.commit()
+                        print(f"✅ Created table: {table_name}")
+                    except Exception as table_error:
+                        print(f"⚠️ Error creating table {table_name}: {table_error}")
+                        db.session.rollback()
+        
+        # ============ FORCE CREATE/UPDATE SUPERADMIN ============
         super_admin_email = 'benedict431@gmail.com'
         super_admin = AdminUser.query.filter_by(email=super_admin_email).first()
         
@@ -1634,54 +1695,6 @@ Feel free to call or send a message on WhatsApp! 🧑‍🌾"""
             'contact': '+254713593573'
         })
 
-# ============ COMMUNITY CHAT ============
-@app.route('/community/chat')
-@login_required
-def community_chat():
-    """Community chat room"""
-    return render_template('community/chat.html')
-
-# ============ SOCKETIO EVENTS ============
-@socketio.on('join')
-def handle_join(data):
-    """Handle user joining chat"""
-    join_room(data.get('room', 'general'))
-    emit('user_joined', {
-        'user_id': data['user_id'],
-        'username': data['username'],
-        'timestamp': datetime.utcnow().isoformat()
-    }, room=data.get('room', 'general'))
-
-@socketio.on('send_message')
-def handle_message(data):
-    """Handle chat messages"""
-    # Save message to database
-    message = ChatMessage(
-        user_id=data['user_id'],
-        room=data.get('room', 'general'),
-        message=data['message']
-    )
-    db.session.add(message)
-    db.session.commit()
-    
-    # Broadcast to room
-    emit('message', {
-        'user_id': data['user_id'],
-        'username': data['username'],
-        'message': data['message'],
-        'timestamp': data.get('timestamp', datetime.utcnow().isoformat()),
-        'avatar': User.query.get(data['user_id']).profile_picture
-    }, room=data.get('room', 'general'))
-
-@socketio.on('typing')
-def handle_typing(data):
-    """Handle typing indicators"""
-    emit('typing', {
-        'user_id': data['user_id'],
-        'username': data['username'],
-        'isTyping': data['isTyping']
-    }, room=data.get('room', 'general'))
-
 # ============ NOTIFICATIONS ============
 @app.route('/notifications/mark-read/<int:notification_id>', methods=['POST'])
 @login_required
@@ -1736,7 +1749,7 @@ def super_admin_portal():
 def sitemap():
     urls = []
     static_pages = ['', 'login', 'register', 'farmer/dashboard', 'farmer/detect-disease', 
-                   'farmer/weather', 'farmer/agrovets', 'community/', 'community/chat']
+                   'farmer/weather', 'farmer/agrovets', 'community/']
     
     for page in static_pages:
         urls.append({
@@ -1815,4 +1828,4 @@ def favicon():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     debug = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
-    socketio.run(app, host='0.0.0.0', port=port, debug=debug)
+    app.run(host='0.0.0.0', port=port, debug=debug)
