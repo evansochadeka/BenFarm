@@ -2,48 +2,204 @@
 
 {% block title %}Find Agrovets - Adiseware{% endblock %}
 
-{% block content %}
-<h1 class="mb-4"><i class="fas fa-store" aria-hidden="true"></i> Find Agricultural Suppliers</h1>
+{% block extra_css %}
+<style>
+    .agrovet-card {
+        transition: transform 0.2s, box-shadow 0.2s;
+        border: none;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        height: 100%;
+        border-radius: 15px;
+        overflow: hidden;
+    }
+    .agrovet-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 8px 16px rgba(0,0,0,0.15);
+    }
+    .agrovet-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 20px;
+        border-radius: 15px;
+        margin-bottom: 30px;
+    }
+    .verified-badge {
+        background: #28a745;
+        color: white;
+        padding: 4px 8px;
+        border-radius: 20px;
+        font-size: 0.75rem;
+        display: inline-block;
+    }
+    .rating {
+        color: #ffc107;
+    }
+    .contact-buttons {
+        display: flex;
+        gap: 10px;
+        margin-top: 15px;
+    }
+    .contact-buttons .btn {
+        flex: 1;
+        border-radius: 25px;
+        padding: 8px;
+        font-size: 0.9rem;
+    }
+    .product-count {
+        background: #f8f9fa;
+        padding: 5px 10px;
+        border-radius: 20px;
+        font-size: 0.85rem;
+        color: #6c757d;
+    }
+</style>
+{% endblock %}
 
-<div class="row">
+{% block content %}
+<div class="agrovet-header">
+    <div class="row align-items-center">
+        <div class="col-md-8">
+            <h1 class="h3 mb-2">
+                <i class="fas fa-store" aria-hidden="true"></i> Find Agricultural Suppliers
+            </h1>
+            <p class="mb-0 text-white-50">
+                Browse verified agrovets, view their products, and place orders directly
+            </p>
+        </div>
+        <div class="col-md-4">
+            <div class="input-group">
+                <input type="text" class="form-control" id="searchAgrovet" placeholder="Search by name or location...">
+                <button class="btn btn-light" type="button">
+                    <i class="fas fa-search"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row" id="agrovetGrid">
     {% if agrovets %}
         {% for agrovet in agrovets %}
-        <div class="col-md-4 mb-4">
-            <div class="card h-100">
+        <div class="col-lg-4 col-md-6 mb-4 agrovet-item">
+            <div class="card agrovet-card">
+                <!-- Agrovet Header with Profile Image -->
                 <div class="card-body">
                     <div class="d-flex align-items-center mb-3">
                         {% if agrovet.profile_picture %}
                         <img src="{{ url_for('static', filename='uploads/' + agrovet.profile_picture) }}" 
-                             alt="{{ agrovet.full_name }}'s profile picture" class="rounded-circle me-3" 
-                             style="width: 60px; height: 60px; object-fit: cover;">
+                             alt="{{ agrovet.full_name }}'s profile picture" 
+                             class="rounded-circle me-3" 
+                             style="width: 70px; height: 70px; object-fit: cover; border: 3px solid #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.1);"
+                             onerror="this.onerror=null; this.src='{{ url_for('static', filename='uploads/default_avatar.png') }}';">
                         {% else %}
                         <div class="rounded-circle bg-success text-white d-flex align-items-center justify-content-center me-3" 
-                             style="width: 60px; height: 60px;">
+                             style="width: 70px; height: 70px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
                             <i class="fas fa-store fa-2x" aria-hidden="true"></i>
                         </div>
                         {% endif %}
+                        
                         <div>
-                            <h2 class="h5 mb-0">{{ agrovet.full_name }}</h2>
-                            <p class="text-muted mb-0 small">Agrovet</p>
+                            <h2 class="h5 mb-1">{{ agrovet.full_name }}</h2>
+                            <div class="d-flex align-items-center mb-1">
+                                <span class="badge bg-success me-2">Agrovet</span>
+                                {% if agrovet.is_verified %}
+                                <span class="verified-badge">
+                                    <i class="fas fa-check-circle"></i> Verified
+                                </span>
+                                {% endif %}
+                            </div>
+                            
+                            <!-- Rating Stars -->
+                            {% set stats = agrovet.get_review_stats() %}
+                            <div class="d-flex align-items-center">
+                                <div class="me-2">
+                                    {% for i in range(5) %}
+                                        {% if i < stats.average|round(0, 'floor') %}
+                                            <i class="fas fa-star rating" style="font-size: 0.8rem;"></i>
+                                        {% elif i < stats.average %}
+                                            <i class="fas fa-star-half-alt rating" style="font-size: 0.8rem;"></i>
+                                        {% else %}
+                                            <i class="far fa-star rating" style="font-size: 0.8rem;"></i>
+                                        {% endif %}
+                                    {% endfor %}
+                                </div>
+                                <span class="small text-muted">
+                                    ({{ stats.count }} reviews)
+                                </span>
+                            </div>
                         </div>
                     </div>
                     
-                    {% if agrovet.location %}
-                    <p class="mb-2"><i class="fas fa-map-marker-alt text-danger" aria-hidden="true"></i> {{ agrovet.location }}</p>
-                    {% endif %}
+                    <!-- Contact Information -->
+                    <div class="mb-3">
+                        {% if agrovet.location %}
+                        <p class="mb-2 small">
+                            <i class="fas fa-map-marker-alt text-danger" style="width: 16px;"></i>
+                            {{ agrovet.location }}
+                        </p>
+                        {% endif %}
+                        
+                        {% if agrovet.phone_number %}
+                        <p class="mb-2 small">
+                            <i class="fas fa-phone text-primary" style="width: 16px;"></i>
+                            <a href="tel:{{ agrovet.phone_number }}" class="text-decoration-none">{{ agrovet.phone_number }}</a>
+                        </p>
+                        {% endif %}
+                        
+                        {% if agrovet.email %}
+                        <p class="mb-2 small">
+                            <i class="fas fa-envelope text-info" style="width: 16px;"></i>
+                            <a href="mailto:{{ agrovet.email }}" class="text-decoration-none">{{ agrovet.email }}</a>
+                        </p>
+                        {% endif %}
+                        
+                        <p class="mb-0 small text-muted">
+                            <i class="fas fa-calendar-alt" style="width: 16px;"></i>
+                            Member since {{ agrovet.created_at.strftime('%b %Y') }}
+                        </p>
+                    </div>
                     
-                    {% if agrovet.phone_number %}
-                    <p class="mb-2"><i class="fas fa-phone text-primary" aria-hidden="true"></i> <a href="tel:{{ agrovet.phone_number }}">{{ agrovet.phone_number }}</a></p>
-                    {% endif %}
+                    <!-- Product Count (you'll need to add this relationship) -->
+                    <div class="product-count d-inline-block mb-3">
+                        <i class="fas fa-boxes me-1"></i>
+                        {{ agrovet.inventory_items|selectattr('quantity', '>', 0)|list|length }} products available
+                    </div>
                     
-                    {% if agrovet.email %}
-                    <p class="mb-3"><i class="fas fa-envelope text-info" aria-hidden="true"></i> <a href="mailto:{{ agrovet.email }}">{{ agrovet.email }}</a></p>
-                    {% endif %}
-                    
-                    <div class="d-grid">
-                        <a href="#" class="btn btn-success btn-sm">
-                            <i class="fas fa-shopping-cart" aria-hidden="true"></i> View Products
+                    <!-- Action Buttons -->
+                    <div class="contact-buttons">
+                        {% if agrovet.phone_number %}
+                        <a href="tel:{{ agrovet.phone_number }}" class="btn btn-outline-primary" title="Call">
+                            <i class="fas fa-phone-alt"></i>
                         </a>
+                        <a href="https://wa.me/{{ agrovet.phone_number|replace('+', '')|replace(' ', '') }}" 
+                           target="_blank" class="btn btn-outline-success" title="WhatsApp">
+                            <i class="fab fa-whatsapp"></i>
+                        </a>
+                        {% endif %}
+                        
+                        <!-- VIEW PRODUCTS BUTTON - THIS IS THE FIX -->
+                        <a href="{{ url_for('farmer_agrovet_products', agrovet_id=agrovet.id) }}" 
+                           class="btn btn-success flex-grow-1">
+                            <i class="fas fa-shopping-cart me-1"></i> Browse Products
+                        </a>
+                    </div>
+                </div>
+                
+                <!-- Footer with Additional Info -->
+                <div class="card-footer bg-white border-0 pt-0">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <a href="{{ url_for('farmer_agrovet_reviews', agrovet_id=agrovet.id) }}" 
+                           class="small text-decoration-none">
+                            <i class="fas fa-star me-1 text-warning"></i> Read Reviews
+                        </a>
+                        <small class="text-muted">
+                            <i class="fas fa-clock me-1"></i>
+                            {% if agrovet.last_login %}
+                            Active {{ agrovet.last_login|timesince }}
+                            {% else %}
+                            Recently active
+                            {% endif %}
+                        </small>
                     </div>
                 </div>
             </div>
@@ -51,10 +207,55 @@
         {% endfor %}
     {% else %}
     <div class="col-12">
-        <div class="alert alert-info" role="alert">
-            No agrovets found in your area yet.
+        <div class="alert alert-info text-center py-5" role="alert">
+            <i class="fas fa-store fa-4x mb-3 text-muted"></i>
+            <h4>No Agrovets Found</h4>
+            <p class="mb-3">There are no agricultural suppliers in your area yet.</p>
+            <a href="{{ url_for('index') }}" class="btn btn-primary">
+                <i class="fas fa-home me-2"></i> Back to Home
+            </a>
         </div>
     </div>
     {% endif %}
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Live search for agrovets
+document.getElementById('searchAgrovet').addEventListener('keyup', function() {
+    const searchText = this.value.toLowerCase();
+    const agrovetItems = document.querySelectorAll('.agrovet-item');
+    
+    agrovetItems.forEach(item => {
+        const name = item.querySelector('h2').textContent.toLowerCase();
+        const location = item.querySelector('.fa-map-marker-alt')?.parentElement?.textContent.toLowerCase() || '';
+        
+        if (name.includes(searchText) || location.includes(searchText)) {
+            item.style.display = '';
+        } else {
+            item.style.display = 'none';
+        }
+    });
+});
+
+// Add timesince filter if not exists
+if (!window.jinja2Filters) {
+    window.jinja2Filters = {};
+    window.jinja2Filters.timesince = function(date) {
+        const seconds = Math.floor((new Date() - new Date(date)) / 1000);
+        let interval = seconds / 31536000;
+        if (interval > 1) return Math.floor(interval) + ' years ago';
+        interval = seconds / 2592000;
+        if (interval > 1) return Math.floor(interval) + ' months ago';
+        interval = seconds / 86400;
+        if (interval > 1) return Math.floor(interval) + ' days ago';
+        interval = seconds / 3600;
+        if (interval > 1) return Math.floor(interval) + ' hours ago';
+        interval = seconds / 60;
+        if (interval > 1) return Math.floor(interval) + ' minutes ago';
+        return 'just now';
+    };
+}
+</script>
 {% endblock %}
