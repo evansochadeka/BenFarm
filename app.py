@@ -9,6 +9,7 @@ import requests
 from config import Config
 from functools import wraps
 from sqlalchemy import inspect
+from flask_socketio import SocketIO, emit, join_room, leave_room
 
 # ============ IMPORT SHARED EXTENSIONS ============
 from extensions import db, login_manager
@@ -22,8 +23,11 @@ db.init_app(app)
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 
+# ============ INITIALIZE SOCKETIO ============
+socketio = SocketIO(app, cors_allowed_origins="*")
+
 # ============ IMPORT MODELS AFTER DB INIT ============
-from models import User, AdminUser, InventoryItem, Customer, Sale, SaleItem, Communication, DiseaseReport, Notification, WeatherData, CommunityPost, PostLike, ReplyLike, ReplyMention, DirectMessage, FAQ, PostTag, CommunityReply, Review
+from models import User, AdminUser, InventoryItem, Customer, Sale, SaleItem, Communication, DiseaseReport, Notification, WeatherData, CommunityPost, PostLike, ReplyLike, ReplyMention, DirectMessage, FAQ, PostTag, CommunityReply, Review, Order, OrderItem, ChatMessage
 
 # ============ CONFIGURE COHERE ============
 COHERE_API_KEY = app.config.get('COHERE_API_KEY', '')
@@ -56,113 +60,49 @@ KENYAN_AGROCHEMICALS = {
     ]
 }
 
-# ============ DATABASE AUTO-CREATION ============
-with app.app_context():
-    try:
-        inspector = inspect(db.engine)
-        if not inspector.has_table('users'):
-            print("📦 Creating database tables for the first time...")
-            db.create_all()
-            print("✅ Database tables created successfully!")
-            
-            # Create default admin user
-            admin_email = app.config.get('ADMIN_EMAIL', 'admin@benfarming.com')
-            admin_password = app.config.get('ADMIN_PASSWORD', 'admin123')
-            
-            if not AdminUser.query.filter_by(email=admin_email).first():
-                admin = AdminUser(
-                    email=admin_email,
-                    full_name=app.config.get('ADMIN_FULL_NAME', 'System Administrator'),
-                    is_super_admin=True,
-                    role='super_admin'
-                )
-                admin.set_password(admin_password)
-                db.session.add(admin)
-                print("✅ Default admin user created")
-            
-            # Create superadmin benedict431@gmail.com
-            super_admin_email = 'benedict431@gmail.com'
-            if not AdminUser.query.filter_by(email=super_admin_email).first():
-                super_admin = AdminUser(
-                    email=super_admin_email,
-                    full_name='Benedict Super Admin',
-                    is_super_admin=True,
-                    role='super_admin'
-                )
-                super_admin.set_password('28734495')
-                db.session.add(super_admin)
-                print("✅ Super admin user created: benedict431@gmail.com")
-            
-            db.session.commit()
-        else:
-            print("✅ Database tables already exist")
-    except Exception as e:
-        print(f"⚠️ Database initialization warning: {e}")
-
-# ============ REGISTER BLUEPRINTS ============
-try:
-    from admin_routes import admin_bp
-    from community_routes import community_bp
-    app.register_blueprint(admin_bp)
-    app.register_blueprint(community_bp)
-    print("✅ Blueprints registered successfully")
-except ImportError as e:
-    print(f"⚠️ Blueprint import error: {e}")
-
 # ============ USER LOADER ============
 @login_manager.user_loader
 def load_user(user_id):
-    """Load user by ID - handles both regular users and admin users"""
-    # First try to load regular user
     user = db.session.get(User, int(user_id))
     if user:
         return user
-    # If not found, try admin user
     admin = db.session.get(AdminUser, int(user_id))
     return admin
 
 # ============ DECORATORS ============
 def admin_required(f):
-    """Decorator to require admin access"""
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if not current_user.is_authenticated:
             flash('Please login as admin first', 'error')
             return redirect(url_for('admin.login'))
-        
         admin_user = AdminUser.query.filter_by(email=current_user.email).first()
         if not admin_user:
             flash('Admin access required', 'error')
             return redirect(url_for('index'))
-        
         return f(*args, **kwargs)
     return decorated_function
 
 def super_admin_required(f):
-    """Decorator to require super admin access"""
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if not current_user.is_authenticated:
             flash('Please login as admin first', 'error')
             return redirect(url_for('admin.login'))
-        
         admin_user = AdminUser.query.filter_by(email=current_user.email).first()
         if not admin_user or not admin_user.is_super_admin:
             flash('Super admin access required', 'error')
             return redirect(url_for('index'))
-        
         return f(*args, **kwargs)
     return decorated_function
 
 def allowed_file(filename):
-    """Check if file extension is allowed"""
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
 
-# ============ COHERE DISEASE ANALYSIS - FULL VERSION ============
+# ============ COHERE DISEASE ANALYSIS - BENFARM ============
 def analyze_plant_with_cohere(image_description, user_description=""):
     """Enhanced plant disease analysis with Cohere API - Identifies plant type and diseases"""
     
-    # Default return values in case of any failure
     default_result = {
         'plant_name': 'Unknown',
         'plant_scientific_name': 'Unknown',
@@ -182,7 +122,6 @@ def analyze_plant_with_cohere(image_description, user_description=""):
         'raw_response': ''
     }
     
-    # Check if Cohere API key is configured
     if not COHERE_API_KEY or COHERE_API_KEY == '':
         default_result['additional_advice'] = 'Cohere API key is not configured. Please set COHERE_API_KEY in your environment variables.'
         default_result['raw_response'] = 'API Key Missing'
@@ -194,7 +133,6 @@ def analyze_plant_with_cohere(image_description, user_description=""):
             'Content-Type': 'application/json',
         }
         
-        # CRITICAL: Use the user's description to identify the plant
         prompt = f"""You are BenFarm, an AI agricultural assistant created and specially trained by Benedict Odhiambo, a Kenyan agricultural expert (Phone: +254713593573). 
 
 FARMER'S DESCRIPTION:
@@ -280,10 +218,7 @@ REMEMBER: The farmer said they are growing "{user_description[:100]}". Base your
         if response.status_code == 200 and 'text' in result:
             analysis_text = result['text']
             parsed_result = parse_cohere_analysis(analysis_text)
-            
-            # Add the raw response to the result
             parsed_result['raw_response'] = analysis_text
-            
             return parsed_result
         else:
             error_msg = result.get('message', 'Unknown error from Cohere API')
@@ -316,11 +251,10 @@ def parse_cohere_analysis(analysis_text):
         'additional_advice': ''
     }
     
-    # If analysis_text is empty or None, return default values
     if not analysis_text:
         return result
     
-    # More flexible plant name extraction - try multiple patterns
+    # Plant name extraction
     plant_patterns = [
         r'PLANT NAME:\s*(.+?)(?:\n|$)',
         r'Plant(?:\s+)?Name:\s*(.+?)(?:\n|$)',
@@ -335,9 +269,7 @@ def parse_cohere_analysis(analysis_text):
             result['plant_name'] = match.group(1).strip()
             break
     
-    # If plant name still unknown, try to extract from context
     if result['plant_name'] == 'Unknown':
-        # Look for common crop names
         common_crops = ['maize', 'tomato', 'potato', 'bean', 'coffee', 'tea', 'wheat', 'rice', 
                        'cassava', 'sweet potato', 'banana', 'cabbage', 'kale', 'spinach', 
                        'onion', 'carrot', 'cucumber', 'pepper', 'strawberry', 'apple', 'mango',
@@ -347,21 +279,21 @@ def parse_cohere_analysis(analysis_text):
                 result['plant_name'] = crop.title()
                 break
     
-    # Extract plant scientific name
-    sci_plant_patterns = [
+    # Scientific name extraction
+    sci_patterns = [
         r'SCIENTIFIC NAME:\s*(.+?)(?:\n|$)',
         r'Scientific(?:\s+)?Name:\s*(.+?)(?:\n|$)',
         r'Botanical(?:\s+)?Name:\s*(.+?)(?:\n|$)',
         r'Latin(?:\s+)?Name:\s*(.+?)(?:\n|$)'
     ]
     
-    for pattern in sci_plant_patterns:
+    for pattern in sci_patterns:
         match = re.search(pattern, analysis_text, re.IGNORECASE)
         if match:
             result['plant_scientific_name'] = match.group(1).strip()
             break
     
-    # Extract disease name - try multiple patterns
+    # Disease name extraction
     disease_patterns = [
         r'DISEASE NAME:\s*(.+?)(?:\n|$)',
         r'Disease(?:\s+)?Name:\s*(.+?)(?:\n|$)',
@@ -375,7 +307,7 @@ def parse_cohere_analysis(analysis_text):
             result['disease_name'] = match.group(1).strip()
             break
     
-    # Extract disease scientific name
+    # Disease scientific name
     disease_sci_patterns = [
         r'DISEASE SCIENTIFIC NAME:\s*(.+?)(?:\n|$)',
         r'Pathogen:\s*(.+?)(?:\n|$)',
@@ -389,7 +321,7 @@ def parse_cohere_analysis(analysis_text):
             result['disease_scientific_name'] = match.group(1).strip()
             break
     
-    # Extract confidence
+    # Confidence
     confidence_patterns = [
         r'CONFIDENCE:\s*(.+?)(?:\n|$)',
         r'Confidence(?:\s+)?Level:\s*(.+?)(?:\n|$)',
@@ -402,16 +334,13 @@ def parse_cohere_analysis(analysis_text):
             result['confidence'] = match.group(1).strip()
             break
     
-    # Extract symptoms - look for bullet points or numbered lists
+    # Symptoms
     symptoms_section = re.search(r'SYMPTOMS?:?(.*?)(?:\n\n|\n[A-Z]|\Z)', analysis_text, re.IGNORECASE | re.DOTALL)
     if symptoms_section:
-        symptoms_text = symptoms_section.group(1)
-        # Find bullet points, dashes, or numbers
-        symptoms = re.findall(r'[•\-*\d+\.\s]\s*(.+?)(?:\n|$)', symptoms_text)
-        if symptoms:
-            result['symptoms'] = [s.strip() for s in symptoms if s.strip() and len(s.strip()) > 2]
+        symptoms = re.findall(r'[•\-*\d+\.\s]\s*(.+?)(?:\n|$)', symptoms_section.group(1))
+        result['symptoms'] = [s.strip() for s in symptoms if s.strip() and len(s.strip()) > 2]
     
-    # Extract cause of disease
+    # Cause of disease
     cause_patterns = [
         r'CAUSE OF DISEASE:\s*(.+?)(?:\n\n|\n[A-Z]|\Z)',
         r'Cause(?:\s+of)?(?:\s+disease)?:\s*(.+?)(?:\n\n|\n[A-Z]|\Z)',
@@ -424,7 +353,7 @@ def parse_cohere_analysis(analysis_text):
             result['cause_of_disease'] = match.group(1).strip()
             break
     
-    # Extract disease cycle
+    # Disease cycle
     cycle_patterns = [
         r'DISEASE CYCLE:\s*(.+?)(?:\n\n|\n[A-Z]|\Z)',
         r'Disease(?:\s+)?Cycle:\s*(.+?)(?:\n\n|\n[A-Z]|\Z)',
@@ -438,52 +367,45 @@ def parse_cohere_analysis(analysis_text):
             result['disease_cycle'] = match.group(1).strip()
             break
     
-    # Extract medications - look for numbered lists
+    # Medications
     meds_section = re.search(r'RECOMMENDED MEDICATIONS?:?(.*?)(?:\n\n|\n[A-Z]|\Z)', analysis_text, re.IGNORECASE | re.DOTALL)
     if meds_section:
-        meds_text = meds_section.group(1)
-        # Find numbered items (1., 2., etc.)
-        meds = re.findall(r'\d+\.\s*(.+?)(?:\n|$)', meds_text)
+        meds = re.findall(r'\d+\.\s*(.+?)(?:\n|$)', meds_section.group(1))
         if meds:
             result['medications'] = [m.strip() for m in meds if m.strip()]
         else:
-            # Try bullet points
-            meds = re.findall(r'[•\-*]\s*(.+?)(?:\n|$)', meds_text)
+            meds = re.findall(r'[•\-*]\s*(.+?)(?:\n|$)', meds_section.group(1))
             result['medications'] = [m.strip() for m in meds if m.strip()]
     
-    # Extract organic alternatives
+    # Organic alternatives
     organic_section = re.search(r'ORGANIC(?:\s+)?ALTERNATIVES?:?(.*?)(?:\n\n|\n[A-Z]|\Z)', analysis_text, re.IGNORECASE | re.DOTALL)
     if organic_section:
-        organic_text = organic_section.group(1)
-        organic = re.findall(r'[•\-*]\s*(.+?)(?:\n|$)', organic_text)
+        organic = re.findall(r'[•\-*]\s*(.+?)(?:\n|$)', organic_section.group(1))
         result['organic_alternatives'] = [o.strip() for o in organic if o.strip()]
     
-    # Extract cultural control methods
+    # Cultural control
     cultural_section = re.search(r'CULTURAL(?:\s+)?CONTROL(?:\s+)?METHODS?:?(.*?)(?:\n\n|\n[A-Z]|\Z)', analysis_text, re.IGNORECASE | re.DOTALL)
     if cultural_section:
-        cultural_text = cultural_section.group(1)
-        cultural = re.findall(r'[•\-*]\s*(.+?)(?:\n|$)', cultural_text)
+        cultural = re.findall(r'[•\-*]\s*(.+?)(?:\n|$)', cultural_section.group(1))
         result['cultural_control'] = [c.strip() for c in cultural if c.strip()]
     
-    # Extract prevention tips
+    # Prevention tips
     prevention_section = re.search(r'PREVENTION(?:\s+)?TIPS?:?(.*?)(?:\n\n|\n[A-Z]|\Z)', analysis_text, re.IGNORECASE | re.DOTALL)
     if prevention_section:
-        prevention_text = prevention_section.group(1)
-        tips = re.findall(r'[•\-*]\s*(.+?)(?:\n|$)', prevention_text)
+        tips = re.findall(r'[•\-*]\s*(.+?)(?:\n|$)', prevention_section.group(1))
         result['prevention_tips'] = [t.strip() for t in tips if t.strip()]
     
-    # Extract environmental conditions
+    # Environmental conditions
     env_section = re.search(r'ENVIRONMENTAL(?:\s+)?CONDITIONS?:?(.*?)(?:\n\n|\n[A-Z]|\Z)', analysis_text, re.IGNORECASE | re.DOTALL)
     if env_section:
-        env_text = env_section.group(1)
-        env_lines = env_text.strip().split('\n')
+        env_lines = env_section.group(1).strip().split('\n')
         for line in env_lines:
             if ':' in line:
                 key, value = line.split(':', 1)
                 key = key.strip().replace('•', '').replace('-', '').strip()
                 result['environmental_conditions'][key] = value.strip()
     
-    # Extract general guidelines
+    # General guidelines
     guidelines_patterns = [
         r'GENERAL GUIDELINES(?:\s+FOR KENYAN FARMERS)?:\s*(.+?)(?:\n\n|\Z)',
         r'GUIDELINES?:\s*(.+?)(?:\n\n|\Z)',
@@ -496,7 +418,7 @@ def parse_cohere_analysis(analysis_text):
             result['general_guidelines'] = match.group(1).strip()
             break
     
-    # Extract additional advice
+    # Additional advice
     advice_patterns = [
         r'ADDITIONAL ADVICE:\s*(.+?)(?:\n\n|\Z)',
         r'Additional(?:\s+)?Advice:\s*(.+?)(?:\n\n|\Z)',
@@ -509,23 +431,82 @@ def parse_cohere_analysis(analysis_text):
             result['additional_advice'] = match.group(1).strip()
             break
     
-    # Clean up any excessive whitespace
     for key in result:
         if isinstance(result[key], str):
             result[key] = ' '.join(result[key].split())
     
     return result
 
-# ============ USER AUTHENTICATION ROUTES ============
+# ============ DATABASE AUTO-CREATION & SUPERADMIN FIX ============
+with app.app_context():
+    try:
+        inspector = inspect(db.engine)
+        if not inspector.has_table('users'):
+            print("📦 Creating database tables for the first time...")
+            db.create_all()
+            print("✅ Database tables created successfully!")
+        
+        # Force create/update superadmin
+        super_admin_email = 'benedict431@gmail.com'
+        super_admin = AdminUser.query.filter_by(email=super_admin_email).first()
+        
+        if not super_admin:
+            super_admin = AdminUser(
+                email=super_admin_email,
+                full_name='Benedict Super Admin',
+                is_super_admin=True,
+                role='super_admin'
+            )
+            super_admin.set_password('28734495')
+            db.session.add(super_admin)
+            print("✅ SUPER ADMIN CREATED: benedict431@gmail.com")
+        else:
+            super_admin.set_password('28734495')
+            super_admin.is_super_admin = True
+            super_admin.role = 'super_admin'
+            print("✅ SUPER ADMIN UPDATED: benedict431@gmail.com")
+        
+        # Create default admin
+        admin_email = app.config.get('ADMIN_EMAIL', 'admin@benfarming.com')
+        admin = AdminUser.query.filter_by(email=admin_email).first()
+        if not admin:
+            admin = AdminUser(
+                email=admin_email,
+                full_name=app.config.get('ADMIN_FULL_NAME', 'System Administrator'),
+                is_super_admin=False,
+                role='admin'
+            )
+            admin.set_password(app.config.get('ADMIN_PASSWORD', 'admin123'))
+            db.session.add(admin)
+            print("✅ Default admin created: admin@benfarming.com")
+        
+        db.session.commit()
+        
+    except Exception as e:
+        print(f"⚠️ Database initialization warning: {e}")
+        db.session.rollback()
+
+# ============ REGISTER BLUEPRINTS ============
+try:
+    from admin_routes import admin_bp
+    from community_routes import community_bp
+    app.register_blueprint(admin_bp)
+    app.register_blueprint(community_bp)
+    print("✅ Blueprints registered successfully")
+except ImportError as e:
+    print(f"⚠️ Blueprint import error: {e}")
+
+# ============ LOGIN ROUTE ============
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    """Regular user login page"""
-    # If user is already logged in, redirect to appropriate dashboard
+    """Unified login page - handles both regular users and admins"""
+    
     if current_user.is_authenticated:
-        # Check if it's an admin user
         if hasattr(current_user, 'is_super_admin'):
-            return redirect(url_for('admin.dashboard'))
-        # Regular user
+            if current_user.is_super_admin:
+                return redirect(url_for('admin.super_dashboard'))
+            else:
+                return redirect(url_for('admin.dashboard'))
         elif hasattr(current_user, 'user_type'):
             if current_user.user_type == 'farmer':
                 return redirect(url_for('farmer_dashboard'))
@@ -541,7 +522,7 @@ def login():
         email = request.form.get('email')
         password = request.form.get('password')
         
-        # First check if it's an admin user
+        # Check admin first
         admin = AdminUser.query.filter_by(email=email).first()
         if admin and admin.check_password(password):
             login_user(admin, remember=True)
@@ -549,16 +530,14 @@ def login():
             db.session.commit()
             flash(f'Welcome back, {admin.full_name}!', 'success')
             
-            # Redirect admin to admin dashboard
             if admin.is_super_admin:
                 return redirect(url_for('admin.super_dashboard'))
-            return redirect(url_for('admin.dashboard'))
+            else:
+                return redirect(url_for('admin.dashboard'))
         
-        # If not admin, check regular user
+        # Check regular user
         user = User.query.filter_by(email=email).first()
-        
         if user and user.check_password(password):
-            # Check if user is active
             if not user.is_active:
                 flash('Your account has been deactivated. Please contact admin.', 'error')
                 return redirect(url_for('login'))
@@ -568,10 +547,7 @@ def login():
             db.session.commit()
             flash(f'Welcome back, {user.full_name}!', 'success')
             
-            # Get the next page from the request args
             next_page = request.args.get('next')
-            
-            # Redirect based on user type
             if next_page and next_page != '/logout' and not next_page.startswith('/login') and not next_page.startswith('/admin'):
                 return redirect(next_page)
             elif user.user_type == 'farmer':
@@ -589,9 +565,9 @@ def login():
     
     return render_template('auth/login.html')
 
+# ============ REGISTER ROUTE ============
 @app.route('/register', methods=['GET', 'POST'])
 def register():
-    """User registration page"""
     if request.method == 'POST':
         email = request.form.get('email')
         password = request.form.get('password')
@@ -600,12 +576,10 @@ def register():
         phone_number = request.form.get('phone_number')
         location = request.form.get('location')
         
-        # Check if user already exists
         if User.query.filter_by(email=email).first():
             flash('Email already registered', 'error')
             return redirect(url_for('register'))
         
-        # Create new user
         user = User(
             email=email,
             full_name=full_name,
@@ -615,7 +589,6 @@ def register():
         )
         user.set_password(password)
         
-        # Handle profile picture
         if 'profile_picture' in request.files:
             file = request.files['profile_picture']
             if file and allowed_file(file.filename):
@@ -636,16 +609,14 @@ def register():
 @app.route('/logout')
 @login_required
 def logout():
-    """User logout"""
     logout_user()
     session.clear()
     flash('You have been logged out successfully.', 'info')
     return redirect(url_for('index'))
 
-# ============ MAIN INDEX ROUTE ============
+# ============ INDEX ============
 @app.route('/')
 def index():
-    # Set session cookie
     resp = make_response(render_template('index.html'))
     if not session.get('visited'):
         session['visited'] = True
@@ -663,35 +634,38 @@ def index():
                 return redirect(url_for('institution_dashboard'))
     return resp
 
-# ============ FARMER ROUTES ============
+# ============ FARMER DASHBOARD ============
 @app.route('/farmer/dashboard')
 @login_required
 def farmer_dashboard():
-    """Farmer dashboard"""
     if current_user.user_type != 'farmer':
         flash('Access denied', 'error')
         return redirect(url_for('index'))
     
-    # Get farmer's disease reports - handle case when no reports exist
     disease_reports = DiseaseReport.query.filter_by(farmer_id=current_user.id)\
         .order_by(DiseaseReport.created_at.desc())\
         .limit(10)\
         .all()
     
-    # Get unread notifications
     notifications = Notification.query.filter_by(
         user_id=current_user.id, 
         is_read=False
     ).order_by(Notification.created_at.desc()).limit(5).all()
     
+    recent_orders = Order.query.filter_by(farmer_id=current_user.id)\
+        .order_by(Order.created_at.desc())\
+        .limit(5)\
+        .all()
+    
     return render_template('farmer/dashboard.html',
                          disease_reports=disease_reports,
-                         notifications=notifications)
+                         notifications=notifications,
+                         recent_orders=recent_orders)
 
+# ============ DISEASE DETECTION ============
 @app.route('/farmer/detect-disease', methods=['GET', 'POST'])
 @login_required
 def detect_disease():
-    """Plant disease detection - REQUIRES description"""
     if current_user.user_type != 'farmer':
         flash('Access denied', 'error')
         return redirect(url_for('index'))
@@ -703,7 +677,6 @@ def detect_disease():
         file = request.files['plant_image']
         description = request.form.get('description', '').strip()
         
-        # Require description
         if not description:
             return jsonify({'error': 'Plant description is required. Please describe your plant and its symptoms.', 'success': False}), 400
         
@@ -712,28 +685,18 @@ def detect_disease():
             
         if file and allowed_file(file.filename):
             try:
-                # Create uploads directory if it doesn't exist
                 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
                 
-                # Generate unique filename
                 timestamp = datetime.utcnow().timestamp()
                 filename = secure_filename(f"plant_{current_user.id}_{timestamp}_{file.filename}")
                 filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-                
-                # Save the file
                 file.save(filepath)
                 print(f"✅ File saved to: {filepath}")
                 
-                # Generate image description for Cohere
                 image_description = f"Plant image uploaded by farmer showing a {description[:50]} plant"
-                
-                # Analyze with Cohere
                 analysis_result = analyze_plant_with_cohere(image_description, description)
-                
-                # Get raw response for display
                 raw_response = analysis_result.pop('raw_response', 'No raw response available')
                 
-                # Create disease report
                 report = DiseaseReport(
                     farmer_id=current_user.id,
                     plant_image=filename,
@@ -761,17 +724,17 @@ def detect_disease():
                 })
                 
             except Exception as e:
-                print(f"❌ Error in disease detection: {str(e)}")
+                print(f"❌ Error: {str(e)}")
                 return jsonify({'error': str(e), 'success': False}), 500
         else:
             return jsonify({'error': 'Invalid file type. Allowed: png, jpg, jpeg, gif', 'success': False}), 400
     
     return render_template('farmer/detect_disease.html')
 
+# ============ WEATHER ============
 @app.route('/farmer/weather')
 @login_required
 def farmer_weather():
-    """Weather and farming recommendations"""
     if current_user.user_type != 'farmer':
         flash('Access denied', 'error')
         return redirect(url_for('index'))
@@ -779,17 +742,14 @@ def farmer_weather():
     location = request.args.get('location', current_user.location or 'Nairobi')
     
     try:
-        # Current weather
         weather_url = f"http://api.openweathermap.org/data/2.5/weather?q={location}&appid={app.config['OPENWEATHER_API_KEY']}&units=metric"
         response = requests.get(weather_url)
         weather_data = response.json()
         
-        # 5-day forecast
         forecast_url = f"http://api.openweathermap.org/data/2.5/forecast?q={location}&appid={app.config['OPENWEATHER_API_KEY']}&units=metric"
         forecast_response = requests.get(forecast_url)
         forecast_data = forecast_response.json()
         
-        # Process forecast for daily aggregation
         daily_forecast = {}
         if 'list' in forecast_data:
             for item in forecast_data['list']:
@@ -804,7 +764,6 @@ def farmer_weather():
                         'rain': item.get('rain', {}).get('3h', 0)
                     }
         
-        # Generate farming recommendations based on weather
         recommendations = generate_farming_recommendations(weather_data, daily_forecast)
         
         return render_template('farmer/weather.html', 
@@ -819,12 +778,10 @@ def farmer_weather():
 @app.route('/farmer/agrovets')
 @login_required
 def farmer_agrovets():
-    """Find agrovets near farmer"""
     if current_user.user_type != 'farmer':
         flash('Access denied', 'error')
         return redirect(url_for('index'))
     
-    # Get all active agrovets
     agrovets = User.query.filter_by(
         user_type='agrovet',
         is_active=True
@@ -833,7 +790,6 @@ def farmer_agrovets():
     return render_template('farmer/agrovets.html', agrovets=agrovets)
 
 def generate_farming_recommendations(weather, forecast):
-    """Generate specific farming recommendations based on weather conditions"""
     recommendations = {
         'irrigation': [],
         'planting': [],
@@ -847,29 +803,24 @@ def generate_farming_recommendations(weather, forecast):
         humidity = weather['main']['humidity']
         conditions = weather['weather'][0]['description'].lower()
         
-        # Temperature-based recommendations
         if temp > 30:
             recommendations['irrigation'].append('Increase irrigation frequency - high temperatures detected')
             recommendations['general'].append('Provide shade for sensitive seedlings')
         elif temp < 15:
             recommendations['general'].append('Protect crops from cold stress - use mulch or row covers')
         
-        # Humidity-based recommendations
         if humidity > 70:
             recommendations['pest_disease'].append('High humidity - monitor for fungal diseases like late blight')
             recommendations['pest_disease'].append('Apply preventive fungicides on susceptible crops')
         elif humidity < 40:
             recommendations['irrigation'].append('Low humidity - increase misting for leafy vegetables')
         
-        # Rain-based recommendations
         if 'rain' in conditions:
             recommendations['planting'].append('Good time for transplanting - soil moisture is adequate')
             recommendations['general'].append('Check for waterlogging in poorly drained areas')
         
-        # Kenyan-specific recommendations
         recommendations['general'].append('Contact your local agrovet for region-specific inputs')
         
-        # Default recommendations if none generated
         if not any(recommendations.values()):
             recommendations['general'] = [
                 'Maintain regular irrigation schedule',
@@ -879,34 +830,202 @@ def generate_farming_recommendations(weather, forecast):
     
     return recommendations
 
-# ============ AGROVET ROUTES - FULLY PRESERVED ============
+# ============ FARMER PRODUCT BROWSING & ORDERS ============
+@app.route('/farmer/agrovet/<int:agrovet_id>/products')
+@login_required
+def farmer_agrovet_products(agrovet_id):
+    """Browse products from a specific agrovet"""
+    if current_user.user_type != 'farmer':
+        flash('Access denied', 'error')
+        return redirect(url_for('index'))
+    
+    agrovet = User.query.get_or_404(agrovet_id)
+    if agrovet.user_type != 'agrovet':
+        flash('Invalid agrovet', 'error')
+        return redirect(url_for('farmer_agrovets'))
+    
+    products = InventoryItem.query.filter_by(
+        agrovet_id=agrovet_id
+    ).filter(InventoryItem.quantity > 0).all()
+    
+    return render_template('agrovet/products.html', 
+                         agrovet=agrovet, 
+                         products=products)
+
+@app.route('/farmer/place-order', methods=['POST'])
+@login_required
+def farmer_place_order():
+    """Place an order with an agrovet"""
+    if current_user.user_type != 'farmer':
+        return jsonify({'error': 'Access denied'}), 403
+    
+    data = request.get_json()
+    
+    try:
+        # Create order
+        order = Order(
+            farmer_id=current_user.id,
+            agrovet_id=data['agrovet_id'],
+            total=data['total'],
+            notes=data.get('notes', ''),
+            status='pending'
+        )
+        db.session.add(order)
+        db.session.flush()
+        
+        # Add order items
+        for item in data['items']:
+            order_item = OrderItem(
+                order_id=order.id,
+                product_id=item['id'],
+                product_name=item['name'],
+                quantity=item['quantity'],
+                price=item['price']
+            )
+            db.session.add(order_item)
+            
+            # Update inventory
+            inventory_item = InventoryItem.query.get(item['id'])
+            if inventory_item:
+                inventory_item.quantity -= item['quantity']
+        
+        # Create notification for agrovet
+        notification = Notification(
+            user_id=data['agrovet_id'],
+            title='📦 New Order Received!',
+            message=f'New order #{order.id} from {current_user.full_name} - KSh {data["total"]:.2f}',
+            notification_type='order',
+            link=f'/agrovet/orders'
+        )
+        db.session.add(notification)
+        
+        db.session.commit()
+        
+        return jsonify({'success': True, 'order_id': order.id})
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/farmer/orders')
+@login_required
+def farmer_orders():
+    """View farmer's orders"""
+    if current_user.user_type != 'farmer':
+        flash('Access denied', 'error')
+        return redirect(url_for('index'))
+    
+    orders = Order.query.filter_by(farmer_id=current_user.id)\
+        .order_by(Order.created_at.desc())\
+        .all()
+    
+    return render_template('farmer/orders.html', orders=orders)
+
+@app.route('/farmer/orders/<int:order_id>/cancel', methods=['POST'])
+@login_required
+def farmer_cancel_order(order_id):
+    """Cancel an order"""
+    if current_user.user_type != 'farmer':
+        return jsonify({'error': 'Access denied'}), 403
+    
+    order = Order.query.get_or_404(order_id)
+    
+    if order.farmer_id != current_user.id:
+        return jsonify({'error': 'Access denied'}), 403
+    
+    if order.status not in ['pending', 'confirmed']:
+        return jsonify({'error': 'Order cannot be cancelled'}), 400
+    
+    order.status = 'cancelled'
+    
+    # Restore inventory
+    for item in order.items:
+        inventory_item = InventoryItem.query.get(item.product_id)
+        if inventory_item:
+            inventory_item.quantity += item.quantity
+    
+    db.session.commit()
+    
+    return jsonify({'success': True})
+
+# ============ FARMER REVIEWS ============
+@app.route('/farmer/write-review/<int:agrovet_id>', methods=['GET', 'POST'])
+@login_required
+def farmer_write_review(agrovet_id):
+    """Write a review for an agrovet"""
+    if current_user.user_type != 'farmer':
+        flash('Access denied', 'error')
+        return redirect(url_for('index'))
+    
+    agrovet = User.query.get_or_404(agrovet_id)
+    
+    if request.method == 'POST':
+        # Check if user has purchased from this agrovet
+        has_purchased = Order.query.filter_by(
+            farmer_id=current_user.id,
+            agrovet_id=agrovet_id,
+            status='completed'
+        ).first() is not None
+        
+        review = Review(
+            user_id=current_user.id,
+            agrovet_id=agrovet_id,
+            rating=int(request.form.get('rating')),
+            title=request.form.get('title'),
+            content=request.form.get('content'),
+            verified_purchase=has_purchased
+        )
+        db.session.add(review)
+        db.session.commit()
+        
+        flash('Thank you for your review!', 'success')
+        return redirect(url_for('farmer_agrovet_reviews', agrovet_id=agrovet_id))
+    
+    return render_template('agrovet/reviews.html', agrovet=agrovet)
+
+@app.route('/farmer/agrovet/<int:agrovet_id>/reviews')
+@login_required
+def farmer_agrovet_reviews(agrovet_id):
+    """View agrovet reviews"""
+    agrovet = User.query.get_or_404(agrovet_id)
+    reviews = Review.query.filter_by(agrovet_id=agrovet_id, status='approved')\
+        .order_by(Review.created_at.desc())\
+        .all()
+    stats = agrovet.get_review_stats()
+    
+    return render_template('agrovet/reviews.html', 
+                         agrovet=agrovet, 
+                         reviews=reviews, 
+                         stats=stats)
+
+# ============ AGROVET DASHBOARD ============
 @app.route('/agrovet/dashboard')
 @login_required
 def agrovet_dashboard():
-    """Agrovet dashboard"""
     if current_user.user_type != 'agrovet':
         flash('Access denied', 'error')
         return redirect(url_for('index'))
     
-    # Get statistics
     total_products = InventoryItem.query.filter_by(agrovet_id=current_user.id).count()
     low_stock_items = InventoryItem.query.filter_by(agrovet_id=current_user.id)\
         .filter(InventoryItem.quantity <= InventoryItem.reorder_level).count()
     total_customers = Customer.query.filter_by(agrovet_id=current_user.id).count()
     
-    # Today's sales
     today = datetime.utcnow().date()
     today_sales = Sale.query.filter_by(agrovet_id=current_user.id)\
         .filter(db.func.date(Sale.sale_date) == today).all()
     today_revenue = sum(sale.total_amount for sale in today_sales)
     
-    # Recent sales
     recent_sales = Sale.query.filter_by(agrovet_id=current_user.id)\
         .order_by(Sale.sale_date.desc())\
         .limit(10)\
         .all()
     
-    # Notifications
+    pending_orders = Order.query.filter_by(
+        agrovet_id=current_user.id,
+        status='pending'
+    ).count()
+    
     notifications = Notification.query.filter_by(
         user_id=current_user.id, 
         is_read=False
@@ -918,12 +1037,13 @@ def agrovet_dashboard():
                          total_customers=total_customers,
                          today_revenue=today_revenue,
                          recent_sales=recent_sales,
+                         pending_orders=pending_orders,
                          notifications=notifications)
 
+# ============ AGROVET INVENTORY ============
 @app.route('/agrovet/inventory')
 @login_required
 def agrovet_inventory():
-    """Agrovet inventory management"""
     if current_user.user_type != 'agrovet':
         flash('Access denied', 'error')
         return redirect(url_for('index'))
@@ -934,7 +1054,6 @@ def agrovet_inventory():
 @app.route('/agrovet/inventory/add', methods=['GET', 'POST'])
 @login_required
 def add_inventory():
-    """Add new inventory item"""
     if current_user.user_type != 'agrovet':
         flash('Access denied', 'error')
         return redirect(url_for('index'))
@@ -965,7 +1084,6 @@ def add_inventory():
 @app.route('/agrovet/inventory/edit/<int:item_id>', methods=['GET', 'POST'])
 @login_required
 def edit_inventory(item_id):
-    """Edit inventory item"""
     if current_user.user_type != 'agrovet':
         flash('Access denied', 'error')
         return redirect(url_for('index'))
@@ -997,7 +1115,6 @@ def edit_inventory(item_id):
 @app.route('/agrovet/inventory/delete/<int:item_id>', methods=['POST'])
 @login_required
 def delete_inventory(item_id):
-    """Delete inventory item"""
     if current_user.user_type != 'agrovet':
         return jsonify({'error': 'Access denied'}), 403
     
@@ -1011,10 +1128,10 @@ def delete_inventory(item_id):
     
     return jsonify({'success': True})
 
+# ============ AGROVET POS ============
 @app.route('/agrovet/pos')
 @login_required
 def agrovet_pos():
-    """Point of Sale system"""
     if current_user.user_type != 'agrovet':
         flash('Access denied', 'error')
         return redirect(url_for('index'))
@@ -1028,7 +1145,6 @@ def agrovet_pos():
 @app.route('/agrovet/pos/checkout', methods=['POST'])
 @login_required
 def pos_checkout():
-    """Process POS checkout"""
     if current_user.user_type != 'agrovet':
         return jsonify({'error': 'Access denied'}), 403
     
@@ -1093,10 +1209,10 @@ def pos_checkout():
         'sale_id': sale.id
     })
 
+# ============ AGROVET CRM ============
 @app.route('/agrovet/crm')
 @login_required
 def agrovet_crm():
-    """Customer Relationship Management"""
     if current_user.user_type != 'agrovet':
         flash('Access denied', 'error')
         return redirect(url_for('index'))
@@ -1110,7 +1226,6 @@ def agrovet_crm():
 @app.route('/agrovet/crm/add', methods=['GET', 'POST'])
 @login_required
 def add_customer():
-    """Add new customer"""
     if current_user.user_type != 'agrovet':
         flash('Access denied', 'error')
         return redirect(url_for('index'))
@@ -1137,7 +1252,6 @@ def add_customer():
 @app.route('/agrovet/crm/view/<int:customer_id>')
 @login_required
 def view_customer(customer_id):
-    """View customer details"""
     if current_user.user_type != 'agrovet':
         flash('Access denied', 'error')
         return redirect(url_for('index'))
@@ -1161,7 +1275,6 @@ def view_customer(customer_id):
 @app.route('/agrovet/crm/communication/<int:customer_id>', methods=['POST'])
 @login_required
 def add_communication(customer_id):
-    """Add communication log for customer"""
     if current_user.user_type != 'agrovet':
         return jsonify({'error': 'Access denied'}), 403
     
@@ -1183,359 +1296,6 @@ def add_communication(customer_id):
     
     flash('Communication log added successfully!', 'success')
     return redirect(url_for('view_customer', customer_id=customer_id))
-
-# ============ OFFICER ROUTES ============
-@app.route('/officer/dashboard')
-@login_required
-def officer_dashboard():
-    """Extension officer dashboard"""
-    if current_user.user_type != 'extension_officer':
-        flash('Access denied', 'error')
-        return redirect(url_for('index'))
-    
-    # Get all disease reports in the area
-    disease_reports = DiseaseReport.query\
-        .order_by(DiseaseReport.created_at.desc())\
-        .limit(50)\
-        .all()
-    
-    # Get all farmers
-    farmers = User.query.filter_by(user_type='farmer', is_active=True).all()
-    
-    return render_template('officer/dashboard.html',
-                         disease_reports=disease_reports,
-                         farmers=farmers)
-
-# ============ INSTITUTION ROUTES ============
-@app.route('/institution/dashboard')
-@login_required
-def institution_dashboard():
-    """Learning institution dashboard"""
-    if current_user.user_type != 'learning_institution':
-        flash('Access denied', 'error')
-        return redirect(url_for('index'))
-    
-    return render_template('institution/dashboard.html')
-
-# ============ SUPER ADMIN ROUTES ============
-@app.route('/admin/super/dashboard')
-@login_required
-@super_admin_required
-def super_admin_dashboard():
-    """Super admin dashboard with full system control"""
-    total_users = User.query.count()
-    total_admins = AdminUser.query.count()
-    total_disease_reports = DiseaseReport.query.count()
-    total_posts = CommunityPost.query.count()
-    
-    recent_users = User.query.order_by(User.created_at.desc()).limit(10).all()
-    recent_admins = AdminUser.query.order_by(AdminUser.created_at.desc()).limit(10).all()
-    recent_reports = DiseaseReport.query.order_by(DiseaseReport.created_at.desc()).limit(10).all()
-    
-    return render_template('admin/super_dashboard.html',
-                         total_users=total_users,
-                         total_admins=total_admins,
-                         total_disease_reports=total_disease_reports,
-                         total_posts=total_posts,
-                         recent_users=recent_users,
-                         recent_admins=recent_admins,
-                         recent_reports=recent_reports)
-
-@app.route('/admin/users/manage', methods=['GET', 'POST'])
-@login_required
-@super_admin_required
-def manage_all_users():
-    """Super admin user management"""
-    if request.method == 'POST':
-        user_id = request.form.get('user_id')
-        action = request.form.get('action')
-        
-        user = User.query.get_or_404(user_id)
-        
-        if action == 'verify':
-            user.is_verified = not user.is_verified
-            msg = f'User {"verified" if user.is_verified else "unverified"}'
-        elif action == 'activate':
-            user.is_active = not user.is_active
-            msg = f'User {"activated" if user.is_active else "deactivated"}'
-        elif action == 'reset_password':
-            new_password = request.form.get('new_password', 'User@12345')
-            user.set_password(new_password)
-            msg = 'Password reset successfully'
-        elif action == 'delete':
-            db.session.delete(user)
-            db.session.commit()
-            flash(f'User {user.full_name} deleted successfully', 'success')
-            return redirect(url_for('manage_all_users'))
-        
-        db.session.commit()
-        flash(msg, 'success')
-        return redirect(url_for('manage_all_users'))
-    
-    users = User.query.order_by(User.created_at.desc()).all()
-    return render_template('admin/manage_users.html', users=users)
-
-@app.route('/admin/admins/manage', methods=['GET', 'POST'])
-@login_required
-@super_admin_required
-def manage_admins():
-    """Super admin management of other admins"""
-    if request.method == 'POST':
-        email = request.form.get('email')
-        password = request.form.get('password')
-        full_name = request.form.get('full_name')
-        is_super_admin = request.form.get('is_super_admin') == 'on'
-        
-        if AdminUser.query.filter_by(email=email).first():
-            flash('Admin with this email already exists', 'error')
-        else:
-            admin = AdminUser(
-                email=email,
-                full_name=full_name,
-                is_super_admin=is_super_admin,
-                role='super_admin' if is_super_admin else 'admin'
-            )
-            admin.set_password(password)
-            db.session.add(admin)
-            db.session.commit()
-            flash(f'Admin {full_name} created successfully', 'success')
-        
-        return redirect(url_for('manage_admins'))
-    
-    admins = AdminUser.query.order_by(AdminUser.created_at.desc()).all()
-    return render_template('admin/manage_admins.html', admins=admins)
-
-@app.route('/admin/users/<int:user_id>/toggle-status', methods=['POST'])
-@login_required
-@super_admin_required
-def toggle_user_status(user_id):
-    """Toggle user active status"""
-    user = User.query.get_or_404(user_id)
-    user.is_active = not user.is_active
-    db.session.commit()
-    
-    return jsonify({'success': True, 'is_active': user.is_active})
-
-@app.route('/admin/users/<int:user_id>/impersonate')
-@login_required
-@super_admin_required
-def impersonate_user(user_id):
-    """Impersonate a user (super admin only)"""
-    user = User.query.get_or_404(user_id)
-    login_user(user)
-    flash(f'You are now logged in as {user.full_name}', 'success')
-    return redirect(url_for('index'))
-
-# ============ AI CHAT ASSISTANT - BENFARM ============
-@app.route('/api/chat', methods=['POST'])
-@login_required
-def chat():
-    """BenFarm AI Chat Assistant - Trained by Benedict Odhiambo"""
-    data = request.get_json()
-    message = data.get('message', '')
-    
-    if not message:
-        return jsonify({'success': False, 'error': 'No message provided'})
-    
-    if not COHERE_API_KEY:
-        return jsonify({
-            'success': False,
-            'error': 'BenFarm is offline. Please contact Benedict Odhiambo at +254713593573 for assistance.',
-            'contact': '+254713593573'
-        })
-    
-    try:
-        headers = {
-            'Authorization': f'Bearer {COHERE_API_KEY}',
-            'Content-Type': 'application/json',
-        }
-        
-        # BenFarm's personality and knowledge prompt
-        system_prompt = f"""You are BenFarm, an AI agricultural assistant created and specially trained by Benedict Odhiambo, a Kenyan agricultural expert (Phone: +254713593573). 
-
-YOUR PERSONALITY:
-- Name: BenFarm
-- Creator: Benedict Odhiambo
-- Expertise: Kenyan agriculture, crop diseases, livestock, sustainable farming
-- Tone: Friendly, professional, warm, and encouraging like a knowledgeable Kenyan farmer
-- Language: Use simple, clear English with occasional Swahili farming terms (e.g., "shamba", "mboga", "mazao")
-
-YOUR CAPABILITIES:
-1. Diagnose plant diseases and pests affecting Kenyan crops
-2. Provide organic and chemical control methods available in Kenya
-3. Advise on farming practices suitable for different Kenyan regions
-4. Recommend planting seasons and crop varieties
-5. Help with livestock management
-6. Explain sustainable farming techniques
-
-IMPORTANT RULES:
-1. If you don't know something, be honest and suggest contacting Benedict directly at +254713593573
-2. If the user wants to speak to a human expert, immediately provide Benedict's contact: +254713593573
-3. Always prioritize organic/eco-friendly solutions when possible
-4. Reference Kenyan agrovets, KALRO, and local agricultural practices
-5. Be specific about Kenyan regions (Rift Valley, Central, Coast, Nyanza, Western, Eastern, North Eastern)
-
-GREETING STYLE:
-- Start with: "Habari yako! I'm BenFarm, your AI farming assistant 🤖🌱"
-- End with: "Karibu tena! Benedict and I are always here to help your shamba thrive!"
-
-Now respond to this farmer's question: {message}"""
-        
-        chat_payload = {
-            'model': COHERE_MODEL,
-            'message': system_prompt,
-            'temperature': 0.7,
-            'max_tokens': 800,
-            'prompt_truncation': 'AUTO',
-            'connectors': []
-        }
-        
-        response = requests.post('https://api.cohere.ai/v1/chat', json=chat_payload, headers=headers)
-        result = response.json()
-        
-        if response.status_code == 200 and 'text' in result:
-            ai_response = result['text']
-            
-            # Check if user wants human expert
-            human_keywords = ['human', 'person', 'speak', 'call', 'contact', 'benedict', 'expert', 'real person']
-            if any(keyword in message.lower() for keyword in human_keywords):
-                ai_response += """
-
-📞 **HUMAN EXPERT CONTACT**:
-You can reach Benedict Odhiambo directly for personalized assistance:
-• **Phone/WhatsApp**: +254713593573
-• **Specialization**: Kenyan agriculture, plant diseases, farm management
-• **Languages**: English, Swahili, Luo
-• **Availability**: Monday-Saturday, 8am-6pm EAT
-
-Feel free to call or send a message on WhatsApp! 🧑‍🌾"""
-            
-            return jsonify({
-                'success': True,
-                'response': ai_response,
-                'assistant': 'BenFarm',
-                'creator': 'Benedict Odhiambo'
-            })
-        else:
-            error_msg = result.get('message', 'Unknown error')
-            return jsonify({
-                'success': False,
-                'error': f'BenFarm is having trouble. Please contact Benedict directly at +254713593573',
-                'contact': '+254713593573'
-            })
-        
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': f'BenFarm is offline. Please reach out to Benedict Odhiambo at +254713593573 for immediate assistance.',
-            'contact': '+254713593573'
-        })
-# ============ FARMER PRODUCT BROWSING & ORDERS ============
-@app.route('/farmer/agrovet/<int:agrovet_id>/products')
-@login_required
-def farmer_agrovet_products(agrovet_id):
-    """Browse products from a specific agrovet"""
-    if current_user.user_type != 'farmer':
-        flash('Access denied', 'error')
-        return redirect(url_for('index'))
-    
-    agrovet = User.query.get_or_404(agrovet_id)
-    if agrovet.user_type != 'agrovet':
-        flash('Invalid agrovet', 'error')
-        return redirect(url_for('farmer_agrovets'))
-    
-    products = InventoryItem.query.filter_by(
-        agrovet_id=agrovet_id,
-        quantity > 0
-    ).all()
-    
-    return render_template('agrovet/products.html', 
-                         agrovet=agrovet, 
-                         products=products)
-
-@app.route('/farmer/place-order', methods=['POST'])
-@login_required
-def farmer_place_order():
-    """Place an order with an agrovet"""
-    if current_user.user_type != 'farmer':
-        return jsonify({'error': 'Access denied'}), 403
-    
-    data = request.get_json()
-    
-    try:
-        # Create order (you'll need to create an Order model)
-        order = Order(
-            farmer_id=current_user.id,
-            agrovet_id=data['agrovet_id'],
-            total=data['total'],
-            notes=data.get('notes', ''),
-            status='pending'
-        )
-        db.session.add(order)
-        db.session.flush()
-        
-        # Add order items
-        for item in data['items']:
-            order_item = OrderItem(
-                order_id=order.id,
-                product_id=item['id'],
-                product_name=item['name'],
-                quantity=item['quantity'],
-                price=item['price']
-            )
-            db.session.add(order_item)
-        
-        # Create notification for agrovet
-        notification = Notification(
-            user_id=data['agrovet_id'],
-            title='New Order Received!',
-            message=f'New order #{order.id} from {current_user.full_name}',
-            notification_type='order',
-            link=f'/agrovet/orders/{order.id}'
-        )
-        db.session.add(notification)
-        
-        db.session.commit()
-        
-        return jsonify({'success': True, 'order_id': order.id})
-        
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/farmer/orders')
-@login_required
-def farmer_orders():
-    """View farmer's orders"""
-    if current_user.user_type != 'farmer':
-        flash('Access denied', 'error')
-        return redirect(url_for('index'))
-    
-    orders = Order.query.filter_by(farmer_id=current_user.id)\
-        .order_by(Order.created_at.desc())\
-        .all()
-    
-    return render_template('farmer/orders.html', orders=orders)
-
-@app.route('/farmer/orders/<int:order_id>/cancel', methods=['POST'])
-@login_required
-def farmer_cancel_order(order_id):
-    """Cancel an order"""
-    if current_user.user_type != 'farmer':
-        return jsonify({'error': 'Access denied'}), 403
-    
-    order = Order.query.get_or_404(order_id)
-    
-    if order.farmer_id != current_user.id:
-        return jsonify({'error': 'Access denied'}), 403
-    
-    if order.status not in ['pending', 'confirmed']:
-        return jsonify({'error': 'Order cannot be cancelled'}), 400
-    
-    order.status = 'cancelled'
-    db.session.commit()
-    
-    return jsonify({'success': True})
 
 # ============ AGROVET ORDER MANAGEMENT ============
 @app.route('/agrovet/orders')
@@ -1565,15 +1325,16 @@ def agrovet_update_order_status(order_id):
         return jsonify({'error': 'Access denied'}), 403
     
     data = request.get_json()
+    old_status = order.status
     order.status = data['status']
     
     # Create notification for farmer
     notification = Notification(
         user_id=order.farmer_id,
-        title=f'Order #{order.id} Status Updated',
+        title=f'📦 Order #{order.id} Status Updated',
         message=f'Your order is now: {order.status}',
         notification_type='order',
-        link=f'/farmer/orders/{order.id}'
+        link=f'/farmer/orders'
     )
     db.session.add(notification)
     
@@ -1581,34 +1342,7 @@ def agrovet_update_order_status(order_id):
     
     return jsonify({'success': True})
 
-# ============ REVIEW SYSTEM ============
-@app.route('/farmer/write-review/<int:agrovet_id>', methods=['GET', 'POST'])
-@login_required
-def farmer_write_review(agrovet_id):
-    """Write a review for an agrovet"""
-    if current_user.user_type != 'farmer':
-        flash('Access denied', 'error')
-        return redirect(url_for('index'))
-    
-    agrovet = User.query.get_or_404(agrovet_id)
-    
-    if request.method == 'POST':
-        review = Review(
-            user_id=current_user.id,
-            agrovet_id=agrovet_id,
-            rating=request.form.get('rating'),
-            title=request.form.get('title'),
-            content=request.form.get('content'),
-            verified_purchase=request.form.get('verified_purchase') == 'on'
-        )
-        db.session.add(review)
-        db.session.commit()
-        
-        flash('Thank you for your review!', 'success')
-        return redirect(url_for('farmer_agrovet_reviews', agrovet_id=agrovet_id))
-    
-    return render_template('agrovet/reviews.html', agrovet=agrovet)
-
+# ============ AGROVET REVIEWS ============
 @app.route('/agrovet/reviews')
 @login_required
 def agrovet_reviews():
@@ -1659,17 +1393,299 @@ def mark_review_helpful(review_id):
     
     return jsonify({'success': True})
 
+# ============ OFFICER DASHBOARD ============
+@app.route('/officer/dashboard')
+@login_required
+def officer_dashboard():
+    if current_user.user_type != 'extension_officer':
+        flash('Access denied', 'error')
+        return redirect(url_for('index'))
+    
+    disease_reports = DiseaseReport.query\
+        .order_by(DiseaseReport.created_at.desc())\
+        .limit(50)\
+        .all()
+    
+    farmers = User.query.filter_by(user_type='farmer', is_active=True).all()
+    
+    return render_template('officer/dashboard.html',
+                         disease_reports=disease_reports,
+                         farmers=farmers)
+
+# ============ INSTITUTION DASHBOARD ============
+@app.route('/institution/dashboard')
+@login_required
+def institution_dashboard():
+    if current_user.user_type != 'learning_institution':
+        flash('Access denied', 'error')
+        return redirect(url_for('index'))
+    
+    return render_template('institution/dashboard.html')
+
+# ============ SUPER ADMIN DASHBOARD ============
+@app.route('/admin/super/dashboard')
+@login_required
+@super_admin_required
+def super_admin_dashboard():
+    total_users = User.query.count()
+    total_admins = AdminUser.query.count()
+    total_disease_reports = DiseaseReport.query.count()
+    total_posts = CommunityPost.query.count()
+    total_orders = Order.query.count()
+    total_reviews = Review.query.count()
+    
+    recent_users = User.query.order_by(User.created_at.desc()).limit(10).all()
+    recent_admins = AdminUser.query.order_by(AdminUser.created_at.desc()).limit(10).all()
+    recent_reports = DiseaseReport.query.order_by(DiseaseReport.created_at.desc()).limit(10).all()
+    recent_orders = Order.query.order_by(Order.created_at.desc()).limit(10).all()
+    
+    return render_template('admin/super_dashboard.html',
+                         total_users=total_users,
+                         total_admins=total_admins,
+                         total_disease_reports=total_disease_reports,
+                         total_posts=total_posts,
+                         total_orders=total_orders,
+                         total_reviews=total_reviews,
+                         recent_users=recent_users,
+                         recent_admins=recent_admins,
+                         recent_reports=recent_reports,
+                         recent_orders=recent_orders)
+
+# ============ SUPER ADMIN USER MANAGEMENT ============
+@app.route('/admin/users/manage', methods=['GET', 'POST'])
+@login_required
+@super_admin_required
+def manage_all_users():
+    if request.method == 'POST':
+        user_id = request.form.get('user_id')
+        action = request.form.get('action')
+        
+        user = User.query.get_or_404(user_id)
+        
+        if action == 'verify':
+            user.is_verified = not user.is_verified
+            msg = f'User {"verified" if user.is_verified else "unverified"}'
+        elif action == 'activate':
+            user.is_active = not user.is_active
+            msg = f'User {"activated" if user.is_active else "deactivated"}'
+        elif action == 'reset_password':
+            new_password = request.form.get('new_password', 'User@12345')
+            user.set_password(new_password)
+            msg = 'Password reset successfully'
+        elif action == 'delete':
+            db.session.delete(user)
+            db.session.commit()
+            flash(f'User {user.full_name} deleted successfully', 'success')
+            return redirect(url_for('manage_all_users'))
+        
+        db.session.commit()
+        flash(msg, 'success')
+        return redirect(url_for('manage_all_users'))
+    
+    users = User.query.order_by(User.created_at.desc()).all()
+    return render_template('admin/manage_users.html', users=users)
+
+@app.route('/admin/admins/manage', methods=['GET', 'POST'])
+@login_required
+@super_admin_required
+def manage_admins():
+    if request.method == 'POST':
+        email = request.form.get('email')
+        password = request.form.get('password')
+        full_name = request.form.get('full_name')
+        is_super_admin = request.form.get('is_super_admin') == 'on'
+        
+        if AdminUser.query.filter_by(email=email).first():
+            flash('Admin with this email already exists', 'error')
+        else:
+            admin = AdminUser(
+                email=email,
+                full_name=full_name,
+                is_super_admin=is_super_admin,
+                role='super_admin' if is_super_admin else 'admin'
+            )
+            admin.set_password(password)
+            db.session.add(admin)
+            db.session.commit()
+            flash(f'Admin {full_name} created successfully', 'success')
+        
+        return redirect(url_for('manage_admins'))
+    
+    admins = AdminUser.query.order_by(AdminUser.created_at.desc()).all()
+    return render_template('admin/manage_admins.html', admins=admins)
+
+@app.route('/admin/users/<int:user_id>/toggle-status', methods=['POST'])
+@login_required
+@super_admin_required
+def toggle_user_status(user_id):
+    user = User.query.get_or_404(user_id)
+    user.is_active = not user.is_active
+    db.session.commit()
+    return jsonify({'success': True, 'is_active': user.is_active})
+
+@app.route('/admin/users/<int:user_id>/impersonate')
+@login_required
+@super_admin_required
+def impersonate_user(user_id):
+    user = User.query.get_or_404(user_id)
+    login_user(user)
+    flash(f'You are now logged in as {user.full_name}', 'success')
+    return redirect(url_for('index'))
+
+# ============ AI CHAT ASSISTANT - BENFARM ============
+@app.route('/api/chat', methods=['POST'])
+@login_required
+def chat():
+    """BenFarm AI Chat Assistant - Trained by Benedict Odhiambo"""
+    data = request.get_json()
+    message = data.get('message', '')
+    
+    if not message:
+        return jsonify({'success': False, 'error': 'No message provided'})
+    
+    if not COHERE_API_KEY:
+        return jsonify({
+            'success': False,
+            'error': 'BenFarm is offline. Please contact Benedict Odhiambo at +254713593573 for assistance.',
+            'contact': '+254713593573'
+        })
+    
+    try:
+        headers = {
+            'Authorization': f'Bearer {COHERE_API_KEY}',
+            'Content-Type': 'application/json',
+        }
+        
+        system_prompt = f"""You are BenFarm, an AI agricultural assistant created and specially trained by Benedict Odhiambo, a Kenyan agricultural expert (Phone: +254713593573). 
+
+YOUR PERSONALITY:
+- Name: BenFarm
+- Creator: Benedict Odhiambo
+- Expertise: Kenyan agriculture, crop diseases, livestock, sustainable farming
+- Tone: Friendly, professional, warm, and encouraging like a knowledgeable Kenyan farmer
+- Language: Use simple, clear English with occasional Swahili farming terms (e.g., "shamba", "mboga", "mazao")
+
+YOUR CAPABILITIES:
+1. Diagnose plant diseases and pests affecting Kenyan crops
+2. Provide organic and chemical control methods available in Kenya
+3. Advise on farming practices suitable for different Kenyan regions
+4. Recommend planting seasons and crop varieties
+5. Help with livestock management
+6. Explain sustainable farming techniques
+
+IMPORTANT RULES:
+1. If you don't know something, be honest and suggest contacting Benedict directly at +254713593573
+2. If the user wants to speak to a human expert, immediately provide Benedict's contact: +254713593573
+3. Always prioritize organic/eco-friendly solutions when possible
+4. Reference Kenyan agrovets, KALRO, and local agricultural practices
+5. Be specific about Kenyan regions (Rift Valley, Central, Coast, Nyanza, Western, Eastern, North Eastern)
+
+GREETING STYLE:
+- Start with: "Habari yako! I'm BenFarm, your AI farming assistant 🤖🌱"
+- End with: "Karibu tena! Benedict and I are always here to help your shamba thrive!"
+
+Now respond to this farmer's question: {message}"""
+        
+        chat_payload = {
+            'model': COHERE_MODEL,
+            'message': system_prompt,
+            'temperature': 0.7,
+            'max_tokens': 800,
+            'prompt_truncation': 'AUTO',
+            'connectors': []
+        }
+        
+        response = requests.post('https://api.cohere.ai/v1/chat', json=chat_payload, headers=headers)
+        result = response.json()
+        
+        if response.status_code == 200 and 'text' in result:
+            ai_response = result['text']
+            
+            human_keywords = ['human', 'person', 'speak', 'call', 'contact', 'benedict', 'expert', 'real person']
+            if any(keyword in message.lower() for keyword in human_keywords):
+                ai_response += """
+
+📞 **HUMAN EXPERT CONTACT**:
+You can reach Benedict Odhiambo directly for personalized assistance:
+• **Phone/WhatsApp**: +254713593573
+• **Specialization**: Kenyan agriculture, plant diseases, farm management
+• **Languages**: English, Swahili, Luo
+• **Availability**: Monday-Saturday, 8am-6pm EAT
+
+Feel free to call or send a message on WhatsApp! 🧑‍🌾"""
+            
+            return jsonify({
+                'success': True,
+                'response': ai_response,
+                'assistant': 'BenFarm',
+                'creator': 'Benedict Odhiambo'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': f'BenFarm is having trouble. Please contact Benedict directly at +254713593573',
+                'contact': '+254713593573'
+            })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f'BenFarm is offline. Please reach out to Benedict Odhiambo at +254713593573 for immediate assistance.',
+            'contact': '+254713593573'
+        })
+
 # ============ COMMUNITY CHAT ============
 @app.route('/community/chat')
 @login_required
 def community_chat():
     """Community chat room"""
     return render_template('community/chat.html')
+
+# ============ SOCKETIO EVENTS ============
+@socketio.on('join')
+def handle_join(data):
+    """Handle user joining chat"""
+    join_room(data.get('room', 'general'))
+    emit('user_joined', {
+        'user_id': data['user_id'],
+        'username': data['username'],
+        'timestamp': datetime.utcnow().isoformat()
+    }, room=data.get('room', 'general'))
+
+@socketio.on('send_message')
+def handle_message(data):
+    """Handle chat messages"""
+    # Save message to database
+    message = ChatMessage(
+        user_id=data['user_id'],
+        room=data.get('room', 'general'),
+        message=data['message']
+    )
+    db.session.add(message)
+    db.session.commit()
+    
+    # Broadcast to room
+    emit('message', {
+        'user_id': data['user_id'],
+        'username': data['username'],
+        'message': data['message'],
+        'timestamp': data.get('timestamp', datetime.utcnow().isoformat()),
+        'avatar': User.query.get(data['user_id']).profile_picture
+    }, room=data.get('room', 'general'))
+
+@socketio.on('typing')
+def handle_typing(data):
+    """Handle typing indicators"""
+    emit('typing', {
+        'user_id': data['user_id'],
+        'username': data['username'],
+        'isTyping': data['isTyping']
+    }, room=data.get('room', 'general'))
+
 # ============ NOTIFICATIONS ============
 @app.route('/notifications/mark-read/<int:notification_id>', methods=['POST'])
 @login_required
 def mark_notification_read(notification_id):
-    """Mark notification as read"""
     notification = Notification.query.get_or_404(notification_id)
     
     if notification.user_id != current_user.id:
@@ -1680,15 +1696,47 @@ def mark_notification_read(notification_id):
     
     return jsonify({'success': True})
 
-# ============ SITEMAP FOR GOOGLE INDEXING ============
+@app.route('/notifications/mark-all-read', methods=['POST'])
+@login_required
+def mark_all_notifications_read():
+    Notification.query.filter_by(
+        user_id=current_user.id,
+        is_read=False
+    ).update({'is_read': True})
+    
+    db.session.commit()
+    
+    return jsonify({'success': True})
+
+# ============ DEBUG ============
+@app.route('/debug-admins')
+def debug_admins():
+    admins = AdminUser.query.all()
+    admin_list = []
+    for admin in admins:
+        admin_list.append({
+            'id': admin.id,
+            'email': admin.email,
+            'full_name': admin.full_name,
+            'is_super_admin': admin.is_super_admin,
+            'role': admin.role
+        })
+    return jsonify({
+        'total_admins': len(admins),
+        'admins': admin_list,
+        'superadmin_exists': AdminUser.query.filter_by(email='benedict431@gmail.com').first() is not None
+    })
+
+@app.route('/super-admin-portal')
+def super_admin_portal():
+    return redirect(url_for('admin.login'))
+
+# ============ SITEMAP ============
 @app.route('/sitemap.xml')
 def sitemap():
-    """Generate XML sitemap for Google indexing"""
     urls = []
-    
-    # Static pages
     static_pages = ['', 'login', 'register', 'farmer/dashboard', 'farmer/detect-disease', 
-                   'farmer/weather', 'farmer/agrovets', 'community/']
+                   'farmer/weather', 'farmer/agrovets', 'community/', 'community/chat']
     
     for page in static_pages:
         urls.append({
@@ -1698,7 +1746,6 @@ def sitemap():
             'priority': '1.0' if page == '' else '0.8'
         })
     
-    # Add community posts
     try:
         posts = CommunityPost.query.filter_by(is_public=True).all()
         for post in posts:
@@ -1718,7 +1765,6 @@ def sitemap():
 
 @app.route('/robots.txt')
 def robots():
-    """Serve robots.txt for search engines"""
     robots_txt = f"""User-agent: *
 Allow: /
 Sitemap: {url_for('sitemap', _external=True)}
@@ -1736,14 +1782,12 @@ def format_datetime(value):
 
 @app.template_filter('format_currency')
 def format_currency(value):
-    """Format currency in Kenyan Shillings"""
     if value is None:
         return "KES 0.00"
     return f"KES {value:,.2f}"
 
 @app.template_filter('is_admin')
 def is_admin(user):
-    """Check if user is an admin"""
     if not user.is_authenticated:
         return False
     admin = AdminUser.query.filter_by(email=user.email).first()
@@ -1751,11 +1795,17 @@ def is_admin(user):
 
 @app.template_filter('is_super_admin')
 def is_super_admin(user):
-    """Check if user is a super admin"""
     if not user.is_authenticated:
         return False
     admin = AdminUser.query.filter_by(email=user.email).first()
     return admin is not None and admin.is_super_admin
+
+@app.template_filter('escapejs')
+def escapejs(value):
+    """Escape string for use in JavaScript"""
+    if value is None:
+        return ''
+    return value.replace("'", "\\'").replace('"', '\\"')
 
 @app.route('/favicon.ico')
 def favicon():
@@ -1765,4 +1815,4 @@ def favicon():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     debug = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
-    app.run(host='0.0.0.0', port=port, debug=debug)
+    socketio.run(app, host='0.0.0.0', port=port, debug=debug)
