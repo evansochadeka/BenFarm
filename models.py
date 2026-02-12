@@ -1,10 +1,7 @@
-from flask_sqlalchemy import SQLAlchemy
 from flask_login import UserMixin
 from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
-
-# ============ INITIALIZE DB - WILL BE CONFIGURED BY APP.PY ============
-db = SQLAlchemy()
+from extensions import db  # ONLY CHANGE - import shared db instance
 
 class User(UserMixin, db.Model):
     __tablename__ = 'users'
