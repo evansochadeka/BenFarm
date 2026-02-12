@@ -33,8 +33,8 @@ class User(UserMixin, db.Model):
     replies = db.relationship('CommunityReply', backref='author', lazy=True, cascade='all, delete-orphan')
     sent_messages = db.relationship('DirectMessage', foreign_keys='DirectMessage.sender_id', backref='sender', lazy=True)
     received_messages = db.relationship('DirectMessage', foreign_keys='DirectMessage.receiver_id', backref='receiver', lazy=True)
-    reviews = db.relationship('Review', foreign_keys='Review.user_id', backref='author', lazy=True, cascade='all, delete-orphan')
-    agrovet_reviews = db.relationship('Review', foreign_keys='Review.agrovet_id', backref='agrovet', lazy=True, cascade='all, delete-orphan')
+    reviews_written = db.relationship('Review', foreign_keys='Review.user_id', backref='author', lazy=True, cascade='all, delete-orphan')
+    reviews_received = db.relationship('Review', foreign_keys='Review.agrovet_id', backref='agrovet', lazy=True, cascade='all, delete-orphan')
     post_likes = db.relationship('PostLike', backref='user', lazy=True, cascade='all, delete-orphan')
     orders_placed = db.relationship('Order', foreign_keys='Order.farmer_id', backref='farmer', lazy=True, cascade='all, delete-orphan')
     orders_received = db.relationship('Order', foreign_keys='Order.agrovet_id', backref='agrovet', lazy=True, cascade='all, delete-orphan')
@@ -58,7 +58,6 @@ class User(UserMixin, db.Model):
             for review in reviews:
                 breakdown[review.rating] += 1
             
-            # Calculate percentages
             for rating in breakdown:
                 breakdown[rating] = round((breakdown[rating] / len(reviews)) * 100)
             
@@ -342,7 +341,6 @@ class Order(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
-    # Relationships
     items = db.relationship('OrderItem', backref='order', lazy=True, cascade='all, delete-orphan')
     review = db.relationship('Review', backref='order', uselist=False, lazy=True)
 
