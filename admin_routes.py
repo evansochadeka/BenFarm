@@ -1,7 +1,8 @@
 import os
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, session
 from flask_login import login_required, current_user
-from models import db, User, AdminUser, CommunityPost, CommunityReply, DirectMessage, Notification, DiseaseReport
+from extensions import db  # IMPORT shared db instance
+from models import User, AdminUser, CommunityPost, CommunityReply, DirectMessage, Notification, DiseaseReport
 from werkzeug.security import generate_password_hash
 from datetime import datetime, timedelta
 import json
@@ -43,15 +44,6 @@ def super_admin_required(f):
 
 @admin_bp.route('/login', methods=['GET', 'POST'])
 def login():
-    """Admin login page - separate from regular user login"""
-    # If already logged in as admin, redirect to admin dashboard
-    if current_user.is_authenticated:
-        admin = AdminUser.query.filter_by(email=current_user.email).first()
-        if admin:
-            if admin.is_super_admin:
-                return redirect(url_for('admin.super_dashboard'))
-            return redirect(url_for('admin.dashboard'))
-    
     if request.method == 'POST':
         email = request.form.get('email')
         password = request.form.get('password')
@@ -64,7 +56,6 @@ def login():
             admin.last_login = datetime.utcnow()
             db.session.commit()
             
-            # Set session cookie
             session['admin_logged_in'] = True
             session['admin_email'] = admin.email
             session.permanent = True
