@@ -446,7 +446,7 @@ with app.app_context():
             db.create_all()
             print("✅ All database tables created successfully!")
         else:
-            print("✅ Users table already exists - checking for missing tables...")
+            print("✅ Database tables already exist - checking for missing tables...")
             
             # List of all tables that should exist
             all_tables = [
@@ -462,6 +462,7 @@ with app.app_context():
                 if not inspector.has_table(table_name):
                     print(f"📦 Creating missing table: {table_name}")
                     try:
+                        # Create specific tables with proper schema
                         if table_name == 'orders':
                             db.session.execute(text("""
                                 CREATE TABLE IF NOT EXISTS orders (
@@ -542,6 +543,7 @@ with app.app_context():
             print("✅ Default admin created: admin@benfarming.com")
         
         db.session.commit()
+        print("✅ Database initialization complete!")
         
     except Exception as e:
         print(f"⚠️ Database initialization warning: {e}")
@@ -839,10 +841,12 @@ def farmer_weather():
 @app.route('/farmer/agrovets')
 @login_required
 def farmer_agrovets():
+    """Find agrovets near farmer"""
     if current_user.user_type != 'farmer':
         flash('Access denied', 'error')
         return redirect(url_for('index'))
     
+    # Get all active agrovets
     agrovets = User.query.filter_by(
         user_type='agrovet',
         is_active=True
@@ -1819,6 +1823,34 @@ def escapejs(value):
     if value is None:
         return ''
     return value.replace("'", "\\'").replace('"', '\\"')
+
+@app.template_filter('timesince')
+def timesince(dt, default="just now"):
+    """
+    Returns string representing "time since" e.g.
+    3 days ago, 5 hours ago etc.
+    """
+    if dt is None:
+        return ""
+    
+    now = datetime.utcnow()
+    diff = now - dt
+    
+    periods = [
+        (diff.days // 365, "year", "years"),
+        (diff.days // 30, "month", "months"),
+        (diff.days // 7, "week", "weeks"),
+        (diff.days, "day", "days"),
+        (diff.seconds // 3600, "hour", "hours"),
+        (diff.seconds // 60, "minute", "minutes"),
+        (diff.seconds, "second", "seconds"),
+    ]
+    
+    for period, singular, plural in periods:
+        if period:
+            return f"{period} {singular if period == 1 else plural} ago"
+    
+    return default
 
 @app.route('/favicon.ico')
 def favicon():
