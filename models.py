@@ -1,7 +1,7 @@
 from flask_login import UserMixin
 from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
-from extensions import db  # ONLY CHANGE - import shared db instance
+from extensions import db
 
 class User(UserMixin, db.Model):
     __tablename__ = 'users'
@@ -33,8 +33,12 @@ class User(UserMixin, db.Model):
     replies = db.relationship('CommunityReply', backref='author', lazy=True, cascade='all, delete-orphan')
     sent_messages = db.relationship('DirectMessage', foreign_keys='DirectMessage.sender_id', backref='sender', lazy=True)
     received_messages = db.relationship('DirectMessage', foreign_keys='DirectMessage.receiver_id', backref='receiver', lazy=True)
-    reviews = db.relationship('Review', backref='user', lazy=True, cascade='all, delete-orphan')
+    reviews = db.relationship('Review', foreign_keys='Review.user_id', backref='author', lazy=True, cascade='all, delete-orphan')
+    agrovet_reviews = db.relationship('Review', foreign_keys='Review.agrovet_id', backref='agrovet', lazy=True, cascade='all, delete-orphan')
     post_likes = db.relationship('PostLike', backref='user', lazy=True, cascade='all, delete-orphan')
+    orders_placed = db.relationship('Order', foreign_keys='Order.farmer_id', backref='farmer', lazy=True, cascade='all, delete-orphan')
+    orders_received = db.relationship('Order', foreign_keys='Order.agrovet_id', backref='agrovet', lazy=True, cascade='all, delete-orphan')
+    chat_messages = db.relationship('ChatMessage', backref='user', lazy=True, cascade='all, delete-orphan')
     
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -43,19 +47,29 @@ class User(UserMixin, db.Model):
         return check_password_hash(self.password_hash, password)
     
     def get_review_stats(self):
-        """Get user's review statistics"""
-        reviews = Review.query.filter_by(user_id=self.id).all()
-        if not reviews:
-            return {'average': 0, 'count': 0}
-        
-        total = sum(review.rating for review in reviews)
-        return {
-            'average': total / len(reviews),
-            'count': len(reviews)
-        }
+        """Get agrovet's review statistics"""
+        if self.user_type == 'agrovet':
+            reviews = Review.query.filter_by(agrovet_id=self.id).all()
+            if not reviews:
+                return {'average': 0, 'count': 0, 'breakdown': {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}}
+            
+            total = sum(review.rating for review in reviews)
+            breakdown = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+            for review in reviews:
+                breakdown[review.rating] += 1
+            
+            # Calculate percentages
+            for rating in breakdown:
+                breakdown[rating] = round((breakdown[rating] / len(reviews)) * 100)
+            
+            return {
+                'average': total / len(reviews),
+                'count': len(reviews),
+                'breakdown': breakdown
+            }
+        return {'average': 0, 'count': 0, 'breakdown': {}}
 
 class AdminUser(UserMixin, db.Model):
-    """Separate admin model for better security"""
     __tablename__ = 'admin_users'
     
     id = db.Column(db.Integer, primary_key=True)
@@ -75,7 +89,6 @@ class AdminUser(UserMixin, db.Model):
         return check_password_hash(self.password_hash, password)
     
     def has_permission(self, permission):
-        """Check if admin has specific permission"""
         if self.is_super_admin:
             return True
         return self.permissions.get(permission, False)
@@ -203,11 +216,12 @@ class WeatherData(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 class Review(db.Model):
-    """User reviews and testimonials"""
     __tablename__ = 'reviews'
     
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    agrovet_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    order_id = db.Column(db.Integer, db.ForeignKey('orders.id'), nullable=True)
     rating = db.Column(db.Integer, nullable=False)
     title = db.Column(db.String(200), nullable=False)
     content = db.Column(db.Text, nullable=False)
@@ -216,11 +230,12 @@ class Review(db.Model):
     verified_purchase = db.Column(db.Boolean, default=False)
     is_featured = db.Column(db.Boolean, default=False)
     status = db.Column(db.String(20), default='approved')
+    response = db.Column(db.Text)
+    response_date = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 class CommunityPost(db.Model):
-    """Community forum posts"""
     __tablename__ = 'community_posts'
     
     id = db.Column(db.Integer, primary_key=True)
@@ -243,7 +258,6 @@ class CommunityPost(db.Model):
     tags = db.relationship('PostTag', backref='post', lazy=True, cascade='all, delete-orphan')
 
 class CommunityReply(db.Model):
-    """Replies to community posts"""
     __tablename__ = 'community_replies'
     
     id = db.Column(db.Integer, primary_key=True)
@@ -259,7 +273,6 @@ class CommunityReply(db.Model):
     likes = db.relationship('ReplyLike', backref='reply', lazy=True, cascade='all, delete-orphan')
 
 class PostTag(db.Model):
-    """Tags for community posts"""
     __tablename__ = 'post_tags'
     
     id = db.Column(db.Integer, primary_key=True)
@@ -268,7 +281,6 @@ class PostTag(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 class PostLike(db.Model):
-    """Likes for posts"""
     __tablename__ = 'post_likes'
     
     id = db.Column(db.Integer, primary_key=True)
@@ -279,7 +291,6 @@ class PostLike(db.Model):
     __table_args__ = (db.UniqueConstraint('post_id', 'user_id', name='unique_post_like'),)
 
 class ReplyLike(db.Model):
-    """Likes for replies"""
     __tablename__ = 'reply_likes'
     
     id = db.Column(db.Integer, primary_key=True)
@@ -290,7 +301,6 @@ class ReplyLike(db.Model):
     __table_args__ = (db.UniqueConstraint('reply_id', 'user_id', name='unique_reply_like'),)
 
 class ReplyMention(db.Model):
-    """Mentions in replies to notify users"""
     __tablename__ = 'reply_mentions'
     
     id = db.Column(db.Integer, primary_key=True)
@@ -300,7 +310,6 @@ class ReplyMention(db.Model):
     is_read = db.Column(db.Boolean, default=False)
 
 class DirectMessage(db.Model):
-    """Private messages between users"""
     __tablename__ = 'direct_messages'
     
     id = db.Column(db.Integer, primary_key=True)
@@ -311,7 +320,6 @@ class DirectMessage(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 class FAQ(db.Model):
-    """Frequently Asked Questions"""
     __tablename__ = 'faqs'
     
     id = db.Column(db.Integer, primary_key=True)
@@ -320,4 +328,40 @@ class FAQ(db.Model):
     category = db.Column(db.String(50))
     is_featured = db.Column(db.Boolean, default=False)
     view_count = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class Order(db.Model):
+    __tablename__ = 'orders'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    farmer_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    agrovet_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    total = db.Column(db.Float, nullable=False)
+    status = db.Column(db.String(50), default='pending')
+    notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    items = db.relationship('OrderItem', backref='order', lazy=True, cascade='all, delete-orphan')
+    review = db.relationship('Review', backref='order', uselist=False, lazy=True)
+
+class OrderItem(db.Model):
+    __tablename__ = 'order_items'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    order_id = db.Column(db.Integer, db.ForeignKey('orders.id'), nullable=False)
+    product_id = db.Column(db.Integer, db.ForeignKey('inventory_items.id'))
+    product_name = db.Column(db.String(200), nullable=False)
+    quantity = db.Column(db.Integer, nullable=False)
+    price = db.Column(db.Float, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class ChatMessage(db.Model):
+    __tablename__ = 'chat_messages'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    room = db.Column(db.String(50), default='general')
+    message = db.Column(db.Text, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
