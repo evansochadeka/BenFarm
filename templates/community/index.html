@@ -1,0 +1,290 @@
+{% extends "components/base.html" %}
+
+{% block title %}Community Forum - Adiseware{% endblock %}
+
+{% block extra_css %}
+<style>
+    .forum-header {
+        background: linear-gradient(135deg, #1e3c2c 0%, #2d5a3b 100%);
+        color: white;
+        padding: 40px;
+        border-radius: 15px;
+        margin-bottom: 30px;
+    }
+    .post-card {
+        border: none;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        transition: transform 0.2s, box-shadow 0.2s;
+        margin-bottom: 20px;
+        border-radius: 12px;
+    }
+    .post-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+    }
+    .post-pinned {
+        border-left: 5px solid #ffc107;
+        background: #fff9e6;
+    }
+    .category-badge {
+        background: #e9ecef;
+        color: #495057;
+        padding: 5px 12px;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        font-weight: 600;
+    }
+    .post-stats {
+        font-size: 0.9rem;
+        color: #6c757d;
+    }
+    .post-stats i {
+        margin-right: 5px;
+    }
+    .avatar-small {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        object-fit: cover;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="forum-header">
+    <div class="row align-items-center">
+        <div class="col-md-8">
+            <h1 class="h2 mb-3">
+                <i class="fas fa-comments me-3"></i> Community Forum
+            </h1>
+            <p class="mb-0 text-white-50">
+                Connect with fellow farmers, share knowledge, ask questions, and grow together
+            </p>
+        </div>
+        <div class="col-md-4 text-md-end">
+            {% if current_user.is_authenticated %}
+            <a href="{{ url_for('community.create_post') }}" class="btn btn-light btn-lg">
+                <i class="fas fa-pen me-2"></i> Create Post
+            </a>
+            {% else %}
+            <a href="{{ url_for('login') }}" class="btn btn-light btn-lg">
+                <i class="fas fa-sign-in-alt me-2"></i> Login to Post
+            </a>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Main Content -->
+    <div class="col-lg-8">
+        <!-- Category Filter -->
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div class="btn-group" role="group">
+                <a href="{{ url_for('community.index') }}" class="btn btn-outline-success {{ 'active' if selected_category == 'all' else '' }}">
+                    All Posts
+                </a>
+                {% for cat in categories %}
+                <a href="{{ url_for('community.index', category=cat) }}" 
+                   class="btn btn-outline-success {{ 'active' if selected_category == cat else '' }}">
+                    {{ cat|capitalize }}
+                </a>
+                {% endfor %}
+            </div>
+            <div class="dropdown">
+                <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                    <i class="fas fa-sort me-1"></i> Sort
+                </button>
+                <ul class="dropdown-menu">
+                    <li><a class="dropdown-item" href="?sort=newest">Newest First</a></li>
+                    <li><a class="dropdown-item" href="?sort=popular">Most Popular</a></li>
+                    <li><a class="dropdown-item" href="?sort=active">Most Active</a></li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Posts List -->
+        {% if posts.items %}
+            {% for post in posts.items %}
+            <div class="card post-card {% if post.is_pinned %}post-pinned{% endif %}">
+                <div class="card-body">
+                    {% if post.is_pinned %}
+                    <span class="badge bg-warning text-dark mb-2">
+                        <i class="fas fa-thumbtack me-1"></i> Pinned
+                    </span>
+                    {% endif %}
+                    
+                    <div class="d-flex">
+                        <div class="flex-shrink-0 me-3">
+                            {% if post.author.profile_picture %}
+                            <img src="{{ url_for('static', filename='uploads/' + post.author.profile_picture) }}" 
+                                 class="avatar-small" alt="{{ post.author.full_name }}"
+                                 onerror="this.onerror=null; this.src='{{ url_for('static', filename='uploads/default_avatar.png') }}';">
+                            {% else %}
+                            <div class="avatar-small bg-success text-white d-flex align-items-center justify-content-center">
+                                <i class="fas fa-user"></i>
+                            </div>
+                            {% endif %}
+                        </div>
+                        <div class="flex-grow-1">
+                            <h3 class="h5 mb-2">
+                                <a href="{{ url_for('community.view_post', post_id=post.id) }}" class="text-decoration-none text-dark">
+                                    {{ post.title }}
+                                </a>
+                            </h3>
+                            
+                            <p class="text-muted small mb-2">
+                                {{ post.content|striptags|truncate(150) }}
+                            </p>
+                            
+                            <div class="d-flex flex-wrap align-items-center post-stats">
+                                <span class="me-3">
+                                    <i class="fas fa-user"></i> {{ post.author.full_name }}
+                                </span>
+                                <span class="me-3">
+                                    <i class="fas fa-clock"></i> {{ post.created_at|timesince }}
+                                </span>
+                                <span class="me-3">
+                                    <i class="fas fa-comment"></i> {{ post.reply_count }} replies
+                                </span>
+                                <span>
+                                    <i class="fas fa-eye"></i> {{ post.view_count }} views
+                                </span>
+                                <span class="ms-auto">
+                                    <span class="category-badge">
+                                        <i class="fas fa-tag me-1"></i> {{ post.category }}
+                                    </span>
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+            
+            <!-- Pagination -->
+            {% if posts.pages > 1 %}
+            <nav aria-label="Post navigation" class="mt-4">
+                <ul class="pagination justify-content-center">
+                    {% if posts.has_prev %}
+                    <li class="page-item">
+                        <a class="page-link" href="{{ url_for('community.index', page=posts.prev_num, category=selected_category) }}">
+                            <i class="fas fa-chevron-left"></i> Previous
+                        </a>
+                    </li>
+                    {% endif %}
+                    
+                    {% for page_num in posts.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+                        {% if page_num %}
+                            {% if page_num == posts.page %}
+                            <li class="page-item active">
+                                <span class="page-link">{{ page_num }}</span>
+                            </li>
+                            {% else %}
+                            <li class="page-item">
+                                <a class="page-link" href="{{ url_for('community.index', page=page_num, category=selected_category) }}">
+                                    {{ page_num }}
+                                </a>
+                            </li>
+                            {% endif %}
+                        {% else %}
+                            <li class="page-item disabled">
+                                <span class="page-link">...</span>
+                            </li>
+                        {% endif %}
+                    {% endfor %}
+                    
+                    {% if posts.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="{{ url_for('community.index', page=posts.next_num, category=selected_category) }}">
+                            Next <i class="fas fa-chevron-right"></i>
+                        </a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+            {% endif %}
+        {% else %}
+            <div class="alert alert-info text-center py-5">
+                <i class="fas fa-comments fa-4x mb-3 text-muted"></i>
+                <h4>No posts yet</h4>
+                <p class="mb-3">Be the first to start a discussion!</p>
+                {% if current_user.is_authenticated %}
+                <a href="{{ url_for('community.create_post') }}" class="btn btn-success">
+                    <i class="fas fa-pen me-2"></i> Create Post
+                </a>
+                {% endif %}
+            </div>
+        {% endif %}
+    </div>
+    
+    <!-- Sidebar -->
+    <div class="col-lg-4">
+        <!-- Community Guidelines -->
+        <div class="card mb-4">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0"><i class="fas fa-info-circle me-2"></i> Community Guidelines</h5>
+            </div>
+            <div class="card-body">
+                <ul class="list-unstyled mb-0">
+                    <li class="mb-2"><i class="fas fa-check-circle text-success me-2"></i> Be respectful and kind</li>
+                    <li class="mb-2"><i class="fas fa-check-circle text-success me-2"></i> Stay on topic</li>
+                    <li class="mb-2"><i class="fas fa-check-circle text-success me-2"></i> No spam or promotions</li>
+                    <li class="mb-2"><i class="fas fa-check-circle text-success me-2"></i> Share knowledge freely</li>
+                    <li><i class="fas fa-check-circle text-success me-2"></i> Help fellow farmers</li>
+                </ul>
+            </div>
+        </div>
+        
+        <!-- Popular Tags -->
+        <div class="card mb-4">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0"><i class="fas fa-tags me-2"></i> Popular Topics</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-flex flex-wrap gap-2">
+                    <a href="{{ url_for('community.index', category='farming') }}" class="btn btn-outline-success btn-sm">
+                        #farming
+                    </a>
+                    <a href="{{ url_for('community.index', category='crops') }}" class="btn btn-outline-success btn-sm">
+                        #crops
+                    </a>
+                    <a href="{{ url_for('community.index', category='livestock') }}" class="btn btn-outline-success btn-sm">
+                        #livestock
+                    </a>
+                    <a href="{{ url_for('community.index', category='diseases') }}" class="btn btn-outline-success btn-sm">
+                        #diseases
+                    </a>
+                    <a href="{{ url_for('community.index', category='weather') }}" class="btn btn-outline-success btn-sm">
+                        #weather
+                    </a>
+                    <a href="{{ url_for('community.index', category='equipment') }}" class="btn btn-outline-success btn-sm">
+                        #equipment
+                    </a>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Statistics -->
+        <div class="card">
+            <div class="card-header bg-warning text-dark">
+                <h5 class="mb-0"><i class="fas fa-chart-bar me-2"></i> Community Stats</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-flex justify-content-between mb-2">
+                    <span>Total Posts:</span>
+                    <strong>{{ posts.total }}</strong>
+                </div>
+                <div class="d-flex justify-content-between mb-2">
+                    <span>Total Members:</span>
+                    <strong>{{ total_users }}</strong>
+                </div>
+                <div class="d-flex justify-content-between">
+                    <span>Online Now:</span>
+                    <strong><span class="text-success" id="onlineCount">0</span></strong>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

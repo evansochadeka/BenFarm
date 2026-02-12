@@ -1,0 +1,385 @@
+{% extends "components/base.html" %}
+
+{% block title %}{{ post.title }} - Community Forum{% endblock %}
+
+{% block extra_css %}
+<style>
+    .post-header {
+        background: linear-gradient(135deg, #1e3c2c 0%, #2d5a3b 100%);
+        color: white;
+        padding: 40px;
+        border-radius: 15px;
+        margin-bottom: 30px;
+    }
+    .post-content {
+        background: white;
+        border-radius: 15px;
+        padding: 30px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        margin-bottom: 30px;
+    }
+    .reply-card {
+        background: white;
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 20px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+        transition: transform 0.2s;
+    }
+    .reply-card:hover {
+        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    }
+    .reply-card.solution {
+        border-left: 5px solid #28a745;
+        background: #f0fff4;
+    }
+    .avatar {
+        width: 50px;
+        height: 50px;
+        border-radius: 50%;
+        object-fit: cover;
+    }
+    .post-stats {
+        color: #6c757d;
+        font-size: 0.9rem;
+    }
+    .post-stats i {
+        margin-right: 5px;
+    }
+    .solution-badge {
+        background: #28a745;
+        color: white;
+        padding: 5px 12px;
+        border-radius: 20px;
+        font-size: 0.8rem;
+    }
+    .vote-btn {
+        color: #6c757d;
+        transition: color 0.2s;
+    }
+    .vote-btn:hover {
+        color: #28a745;
+    }
+    .vote-btn.active {
+        color: #28a745;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Post Header -->
+<div class="post-header">
+    <div class="d-flex justify-content-between align-items-start">
+        <div>
+            <div class="mb-3">
+                <span class="badge bg-light text-dark me-2">{{ post.category|capitalize }}</span>
+                <span class="badge bg-info">{{ post.post_type|capitalize }}</span>
+                {% if post.is_pinned %}
+                <span class="badge bg-warning text-dark">
+                    <i class="fas fa-thumbtack me-1"></i> Pinned
+                </span>
+                {% endif %}
+                {% if post.is_closed %}
+                <span class="badge bg-danger">
+                    <i class="fas fa-lock me-1"></i> Closed
+                </span>
+                {% endif %}
+            </div>
+            <h1 class="h2 mb-3">{{ post.title }}</h1>
+            <div class="d-flex align-items-center post-stats text-white-50">
+                <span class="me-4">
+                    <i class="fas fa-user"></i> {{ post.author.full_name }}
+                </span>
+                <span class="me-4">
+                    <i class="fas fa-clock"></i> {{ post.created_at|timesince }}
+                </span>
+                <span class="me-4">
+                    <i class="fas fa-eye"></i> {{ post.view_count }} views
+                </span>
+                <span>
+                    <i class="fas fa-comment"></i> {{ post.reply_count }} replies
+                </span>
+            </div>
+        </div>
+        {% if current_user.is_authenticated and current_user.id == post.user_id %}
+        <div class="dropdown">
+            <button class="btn btn-light btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                <i class="fas fa-ellipsis-v"></i>
+            </button>
+            <ul class="dropdown-menu">
+                <li><a class="dropdown-item" href="#"><i class="fas fa-edit me-2"></i> Edit Post</a></li>
+                <li><a class="dropdown-item text-danger" href="#"><i class="fas fa-trash me-2"></i> Delete Post</a></li>
+            </ul>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="row">
+    <!-- Main Content -->
+    <div class="col-lg-8">
+        <!-- Original Post -->
+        <div class="post-content">
+            <div class="d-flex mb-4">
+                <div class="flex-shrink-0 me-3">
+                    {% if post.author.profile_picture %}
+                    <img src="{{ url_for('static', filename='uploads/' + post.author.profile_picture) }}" 
+                         class="avatar" alt="{{ post.author.full_name }}"
+                         onerror="this.onerror=null; this.src='{{ url_for('static', filename='uploads/default_avatar.png') }}';">
+                    {% else %}
+                    <div class="avatar bg-success text-white d-flex align-items-center justify-content-center">
+                        <i class="fas fa-user fa-lg"></i>
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="flex-grow-1">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <div>
+                            <strong>{{ post.author.full_name }}</strong>
+                            {% if post.author.is_verified %}
+                            <i class="fas fa-check-circle text-success ms-1" title="Verified Farmer"></i>
+                            {% endif %}
+                            <span class="text-muted ms-2">@{{ post.author.user_type }}</span>
+                        </div>
+                        <small class="text-muted">{{ post.created_at|datetime }}</small>
+                    </div>
+                    <div class="post-body">
+                        {{ post.content|replace('\n', '<br>')|safe }}
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center mt-4">
+                        <button class="btn btn-sm btn-outline-success vote-btn" onclick="likePost({{ post.id }})">
+                            <i class="fas fa-heart me-1"></i> Like ({{ post.like_count }})
+                        </button>
+                        {% if not post.is_closed and current_user.is_authenticated %}
+                        <a href="#reply-form" class="btn btn-sm btn-outline-primary">
+                            <i class="fas fa-reply me-1"></i> Reply
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Replies Section -->
+        <h3 class="h5 mb-4">
+            <i class="fas fa-comments me-2"></i> 
+            {{ replies|length }} Replies
+        </h3>
+
+        {% if replies %}
+            {% for reply in replies %}
+            <div class="reply-card {% if reply.is_solution %}solution{% endif %}" id="reply-{{ reply.id }}">
+                <div class="d-flex">
+                    <div class="flex-shrink-0 me-3">
+                        {% if reply.author.profile_picture %}
+                        <img src="{{ url_for('static', filename='uploads/' + reply.author.profile_picture) }}" 
+                             class="avatar" style="width: 40px; height: 40px;" alt="{{ reply.author.full_name }}"
+                             onerror="this.onerror=null; this.src='{{ url_for('static', filename='uploads/default_avatar.png') }}';">
+                        {% else %}
+                        <div class="bg-success text-white d-flex align-items-center justify-content-center" 
+                             style="width: 40px; height: 40px; border-radius: 50%;">
+                            <i class="fas fa-user"></i>
+                        </div>
+                        {% endif %}
+                    </div>
+                    <div class="flex-grow-1">
+                        <div class="d-flex justify-content-between align-items-start mb-2">
+                            <div>
+                                <strong>{{ reply.author.full_name }}</strong>
+                                {% if reply.author.is_verified %}
+                                <i class="fas fa-check-circle text-success ms-1" style="font-size: 0.8rem;"></i>
+                                {% endif %}
+                                <span class="text-muted ms-2 small">{{ reply.created_at|timesince }}</span>
+                            </div>
+                            {% if reply.is_solution %}
+                            <span class="solution-badge">
+                                <i class="fas fa-check-circle me-1"></i> Solution
+                            </span>
+                            {% endif %}
+                        </div>
+                        <div class="mb-2">
+                            {{ reply.content|replace('\n', '<br>')|safe }}
+                        </div>
+                        <div class="d-flex align-items-center">
+                            <button class="btn btn-sm btn-link text-muted vote-btn" onclick="likeReply({{ reply.id }})">
+                                <i class="fas fa-heart me-1"></i> {{ reply.like_count }}
+                            </button>
+                            {% if current_user.is_authenticated and current_user.id == post.user_id and not post.is_closed %}
+                            <button class="btn btn-sm btn-link text-success" onclick="markAsSolution({{ reply.id }})">
+                                <i class="fas fa-check-circle me-1"></i> Mark as Solution
+                            </button>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+            <div class="alert alert-light text-center py-5">
+                <i class="fas fa-comment-dots fa-3x mb-3 text-muted"></i>
+                <p class="mb-0">No replies yet. Be the first to respond!</p>
+            </div>
+        {% endif %}
+
+        <!-- Reply Form -->
+        {% if current_user.is_authenticated and not post.is_closed %}
+        <div class="card mt-4" id="reply-form">
+            <div class="card-header bg-success text-white">
+                <h4 class="h6 mb-0"><i class="fas fa-reply me-2"></i> Post a Reply</h4>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('community.reply_post', post_id=post.id) }}">
+                    <div class="mb-3">
+                        <textarea class="form-control" name="content" rows="4" 
+                                  placeholder="Share your knowledge or ask for clarification..." required></textarea>
+                        <div class="form-text">
+                            <i class="fas fa-at me-1"></i> Use @username to mention other farmers
+                        </div>
+                    </div>
+                    <div class="d-flex justify-content-end">
+                        <button type="submit" class="btn btn-success">
+                            <i class="fas fa-paper-plane me-2"></i> Post Reply
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        {% elif post.is_closed %}
+        <div class="alert alert-warning mt-4">
+            <i class="fas fa-lock me-2"></i> This post has been closed for new replies.
+        </div>
+        {% else %}
+        <div class="alert alert-info mt-4">
+            <i class="fas fa-sign-in-alt me-2"></i> 
+            Please <a href="{{ url_for('login') }}" class="alert-link">login</a> to reply to this post.
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Sidebar -->
+    <div class="col-lg-4">
+        <!-- Author Info -->
+        <div class="card mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="fas fa-user-circle me-2"></i> About the Author</h5>
+            </div>
+            <div class="card-body text-center">
+                {% if post.author.profile_picture %}
+                <img src="{{ url_for('static', filename='uploads/' + post.author.profile_picture) }}" 
+                     class="rounded-circle mb-3" style="width: 80px; height: 80px; object-fit: cover;"
+                     onerror="this.onerror=null; this.src='{{ url_for('static', filename='uploads/default_avatar.png') }}';">
+                {% else %}
+                <div class="bg-success text-white d-flex align-items-center justify-content-center rounded-circle mx-auto mb-3"
+                     style="width: 80px; height: 80px;">
+                    <i class="fas fa-user fa-3x"></i>
+                </div>
+                {% endif %}
+                <h6 class="fw-bold mb-1">{{ post.author.full_name }}</h6>
+                <p class="text-muted small mb-2">{{ post.author.user_type|replace('_', ' ')|title }}</p>
+                {% if post.author.location %}
+                <p class="small mb-2"><i class="fas fa-map-marker-alt me-1"></i> {{ post.author.location }}</p>
+                {% endif %}
+                <p class="small text-muted mb-0">
+                    <i class="fas fa-calendar me-1"></i> Member since {{ post.author.created_at.strftime('%b %Y') }}
+                </p>
+            </div>
+        </div>
+
+        <!-- Post Stats -->
+        <div class="card mb-4">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0"><i class="fas fa-chart-bar me-2"></i> Post Stats</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-flex justify-content-between mb-2">
+                    <span>Views:</span>
+                    <strong>{{ post.view_count }}</strong>
+                </div>
+                <div class="d-flex justify-content-between mb-2">
+                    <span>Replies:</span>
+                    <strong>{{ post.reply_count }}</strong>
+                </div>
+                <div class="d-flex justify-content-between mb-2">
+                    <span>Likes:</span>
+                    <strong>{{ post.like_count }}</strong>
+                </div>
+                <div class="d-flex justify-content-between">
+                    <span>Created:</span>
+                    <strong>{{ post.created_at.strftime('%b %d, %Y') }}</strong>
+                </div>
+            </div>
+        </div>
+
+        <!-- Related Posts -->
+        <div class="card">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0"><i class="fas fa-link me-2"></i> Related Posts</h5>
+            </div>
+            <div class="card-body">
+                <div class="list-group list-group-flush">
+                    {% for related in related_posts %}
+                    <a href="{{ url_for('community.view_post', post_id=related.id) }}" 
+                       class="list-group-item list-group-item-action px-0">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span class="small">{{ related.title|truncate(40) }}</span>
+                            <small class="text-muted">{{ related.reply_count }} replies</small>
+                        </div>
+                    </a>
+                    {% else %}
+                    <p class="text-muted small mb-0">No related posts found</p>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function likePost(postId) {
+    fetch(`/community/post/${postId}/like`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        }
+    });
+}
+
+function likeReply(replyId) {
+    fetch(`/community/reply/${replyId}/like`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        }
+    });
+}
+
+function markAsSolution(replyId) {
+    if (confirm('Mark this reply as the solution?')) {
+        fetch(`/community/reply/${replyId}/mark-solution`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            }
+        });
+    }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,173 @@
+{% extends "components/base.html" %}
+
+{% block title %}Create Post - Community Forum{% endblock %}
+
+{% block extra_css %}
+<style>
+    .create-post-header {
+        background: linear-gradient(135deg, #1e3c2c 0%, #2d5a3b 100%);
+        color: white;
+        padding: 30px;
+        border-radius: 15px;
+        margin-bottom: 30px;
+    }
+    .form-card {
+        border: none;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        border-radius: 15px;
+    }
+    .preview-card {
+        background: #f8f9fa;
+        border-left: 4px solid #28a745;
+        border-radius: 8px;
+        padding: 20px;
+        margin-top: 20px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="create-post-header">
+    <h1 class="h3 mb-2">
+        <i class="fas fa-pen me-3"></i> Create New Post
+    </h1>
+    <p class="mb-0 text-white-50">
+        Share your knowledge, ask questions, and help fellow farmers
+    </p>
+</div>
+
+<div class="row">
+    <div class="col-lg-8 mx-auto">
+        <div class="card form-card">
+            <div class="card-body p-4">
+                <form method="POST" action="{{ url_for('community.create_post') }}">
+                    <div class="mb-3">
+                        <label for="title" class="form-label fw-bold">Post Title</label>
+                        <input type="text" class="form-control form-control-lg" id="title" name="title" 
+                               placeholder="What's your question or topic?" required>
+                        <div class="form-text">Be specific and descriptive</div>
+                    </div>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="category" class="form-label fw-bold">Category</label>
+                            <select class="form-select" id="category" name="category">
+                                <option value="general">General Discussion</option>
+                                <option value="farming">Farming Tips</option>
+                                <option value="crops">Crops</option>
+                                <option value="livestock">Livestock</option>
+                                <option value="diseases">Plant Diseases</option>
+                                <option value="weather">Weather</option>
+                                <option value="equipment">Farm Equipment</option>
+                                <option value="market">Market Prices</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="post_type" class="form-label fw-bold">Post Type</label>
+                            <select class="form-select" id="post_type" name="post_type">
+                                <option value="question">Question</option>
+                                <option value="discussion">Discussion</option>
+                                <option value="tip">Farming Tip</option>
+                                <option value="resource">Resource</option>
+                                <option value="experience">Experience</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="content" class="form-label fw-bold">Post Content</label>
+                        <textarea class="form-control" id="content" name="content" rows="10" 
+                                  placeholder="Write your post in detail..." required></textarea>
+                        <div class="form-text">
+                            <i class="fas fa-info-circle me-1"></i> 
+                            You can use @mentions to notify other users
+                        </div>
+                    </div>
+                    
+                    <div class="preview-card d-none" id="preview">
+                        <h6 class="fw-bold mb-3"><i class="fas fa-eye me-2"></i> Preview</h6>
+                        <div id="preview-content"></div>
+                    </div>
+                    
+                    <div class="d-flex justify-content-between align-items-center mt-4">
+                        <div>
+                            <button type="button" class="btn btn-outline-secondary me-2" onclick="showPreview()">
+                                <i class="fas fa-eye me-2"></i> Preview
+                            </button>
+                            <button type="button" class="btn btn-outline-info" onclick="showMarkdownHelp()">
+                                <i class="fas fa-question-circle me-2"></i> Formatting Help
+                            </button>
+                        </div>
+                        <div>
+                            <a href="{{ url_for('community.index') }}" class="btn btn-outline-secondary me-2">
+                                Cancel
+                            </a>
+                            <button type="submit" class="btn btn-success btn-lg">
+                                <i class="fas fa-paper-plane me-2"></i> Publish Post
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <!-- Markdown Help Modal -->
+        <div class="modal fade" id="markdownHelpModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header bg-info text-white">
+                        <h5 class="modal-title">
+                            <i class="fas fa-question-circle me-2"></i> Formatting Help
+                        </h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <h6 class="fw-bold">Text Formatting</h6>
+                        <ul class="list-unstyled mb-4">
+                            <li class="mb-2"><code>**bold**</code> → <strong>bold</strong></li>
+                            <li class="mb-2"><code>*italic*</code> → <em>italic</em></li>
+                            <li class="mb-2"><code># Heading 1</code> → Large heading</li>
+                            <li class="mb-2"><code>## Heading 2</code> → Medium heading</li>
+                            <li class="mb-2"><code>### Heading 3</code> → Small heading</li>
+                            <li class="mb-2"><code>[link](https://example.com)</code> → Hyperlink</li>
+                            <li class="mb-2"><code>![alt text](image.jpg)</code> → Image</li>
+                            <li class="mb-2"><code>@username</code> → Mention user</li>
+                        </ul>
+                        <h6 class="fw-bold">Lists</h6>
+                        <ul class="list-unstyled mb-0">
+                            <li class="mb-2"><code>* Item 1</code> → Bullet list</li>
+                            <li class="mb-2"><code>1. Item 1</code> → Numbered list</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function showPreview() {
+    const content = document.getElementById('content').value;
+    const previewDiv = document.getElementById('preview');
+    const previewContent = document.getElementById('preview-content');
+    
+    if (content.trim()) {
+        previewDiv.classList.remove('d-none');
+        previewContent.textContent = content;
+    } else {
+        alert('Please write something to preview');
+    }
+}
+
+function showMarkdownHelp() {
+    const modal = new bootstrap.Modal(document.getElementById('markdownHelpModal'));
+    modal.show();
+}
+
+// Auto-resize textarea
+document.getElementById('content').addEventListener('input', function() {
+    this.style.height = 'auto';
+    this.style.height = (this.scrollHeight) + 'px';
+});
+</script>
+{% endblock %}
