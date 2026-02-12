@@ -3,6 +3,7 @@ from flask_login import UserMixin
 from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
 
+# ============ INITIALIZE DB - WILL BE CONFIGURED BY APP.PY ============
 db = SQLAlchemy()
 
 class User(UserMixin, db.Model):
@@ -65,10 +66,10 @@ class AdminUser(UserMixin, db.Model):
     password_hash = db.Column(db.String(255), nullable=False)
     full_name = db.Column(db.String(100), nullable=False)
     is_super_admin = db.Column(db.Boolean, default=False)
-    role = db.Column(db.String(50), default='admin')  # super_admin, admin, moderator
+    role = db.Column(db.String(50), default='admin')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     last_login = db.Column(db.DateTime)
-    permissions = db.Column(db.JSON, default={})  # Store specific permissions
+    permissions = db.Column(db.JSON, default={})
     
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -169,7 +170,7 @@ class DiseaseReport(db.Model):
     scientific_name = db.Column(db.String(200))
     confidence = db.Column(db.Float)
     treatment_recommendation = db.Column(db.Text)
-    medications_available = db.Column(db.JSON)  # Store Kenyan medications as JSON
+    medications_available = db.Column(db.JSON)
     prevention_tips = db.Column(db.Text)
     environmental_conditions = db.Column(db.JSON)
     location = db.Column(db.String(200))
@@ -210,14 +211,14 @@ class Review(db.Model):
     
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    rating = db.Column(db.Integer, nullable=False)  # 1-5 stars
+    rating = db.Column(db.Integer, nullable=False)
     title = db.Column(db.String(200), nullable=False)
     content = db.Column(db.Text, nullable=False)
-    service_type = db.Column(db.String(50))  # farming, agrovet, extension, etc.
+    service_type = db.Column(db.String(50))
     helpful_count = db.Column(db.Integer, default=0)
     verified_purchase = db.Column(db.Boolean, default=False)
     is_featured = db.Column(db.Boolean, default=False)
-    status = db.Column(db.String(20), default='approved')  # approved, pending, rejected
+    status = db.Column(db.String(20), default='approved')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
