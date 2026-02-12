@@ -154,4 +154,98 @@ def like_post(post_id):
         db.session.add(like)
         liked = True
         
-        if post.user_id
+        if post.user_id != current_user.id:
+            create_notification(
+                user_id=post.user_id,
+                title='Your Post Got a Like!',
+                message=f'{current_user.full_name} liked your post: {post.title[:50]}...',
+                link=f'/community/post/{post_id}'
+            )
+    
+    db.session.commit()
+    
+    return jsonify({
+        'success': True,
+        'liked': liked,
+        'likes_count': PostLike.query.filter_by(post_id=post_id).count()
+    })
+
+@community_bp.route('/reply/<int:reply_id>/mark-solution', methods=['POST'])
+@login_required
+def mark_as_solution(reply_id):
+    reply = CommunityReply.query.get_or_404(reply_id)
+    post = CommunityPost.query.get_or_404(reply.post_id)
+    
+    if post.user_id != current_user.id:
+        return jsonify({'error': 'Only post author can mark as solution'}), 403
+    
+    reply.is_solution = not reply.is_solution
+    
+    if reply.is_solution:
+        create_notification(
+            user_id=reply.user_id,
+            title='Your Reply Was Marked as Solution!',
+            message=f'Your reply was marked as the solution for: {post.title[:50]}...',
+            link=f'/community/post/{post.id}#reply-{reply.id}'
+        )
+    
+    db.session.commit()
+    
+    return jsonify({
+        'success': True,
+        'is_solution': reply.is_solution
+    })
+
+@community_bp.route('/my-posts')
+@login_required
+def my_posts():
+    posts = CommunityPost.query.filter_by(user_id=current_user.id)\
+        .order_by(CommunityPost.created_at.desc())\
+        .all()
+    
+    return render_template('community/my_posts.html', posts=posts)
+
+@community_bp.route('/search')
+def search():
+    query = request.args.get('q', '')
+    
+    if query:
+        posts = CommunityPost.query.filter(
+            (CommunityPost.title.ilike(f'%{query}%')) |
+            (CommunityPost.content.ilike(f'%{query}%'))
+        ).order_by(CommunityPost.created_at.desc()).all()
+    else:
+        posts = []
+    
+    return render_template('community/search.html', posts=posts, query=query)
+
+@community_bp.route('/notifications')
+@login_required
+def notifications():
+    user_notifications = Notification.query.filter_by(
+        user_id=current_user.id
+    ).order_by(Notification.created_at.desc()).all()
+    
+    return render_template('community/notifications.html', notifications=user_notifications)
+
+@community_bp.route('/notifications/clear', methods=['POST'])
+@login_required
+def clear_notifications():
+    Notification.query.filter_by(user_id=current_user.id).delete()
+    db.session.commit()
+    
+    flash('All notifications cleared', 'success')
+    return redirect(url_for('community.notifications'))
+
+@community_bp.route('/notifications/mark-all-read', methods=['POST'])
+@login_required
+def mark_all_notifications_read():
+    Notification.query.filter_by(
+        user_id=current_user.id,
+        is_read=False
+    ).update({'is_read': True})
+    
+    db.session.commit()
+    
+    flash('All notifications marked as read', 'success')
+    return redirect(url_for('community.notifications'))
