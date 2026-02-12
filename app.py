@@ -250,7 +250,6 @@ def parse_cohere_analysis(analysis_text):
     if not analysis_text:
         return result
     
-    # Plant name extraction
     plant_patterns = [
         r'PLANT NAME:\s*(.+?)(?:\n|$)',
         r'Plant(?:\s+)?Name:\s*(.+?)(?:\n|$)',
@@ -275,7 +274,6 @@ def parse_cohere_analysis(analysis_text):
                 result['plant_name'] = crop.title()
                 break
     
-    # Scientific name extraction
     sci_patterns = [
         r'SCIENTIFIC NAME:\s*(.+?)(?:\n|$)',
         r'Scientific(?:\s+)?Name:\s*(.+?)(?:\n|$)',
@@ -289,7 +287,6 @@ def parse_cohere_analysis(analysis_text):
             result['plant_scientific_name'] = match.group(1).strip()
             break
     
-    # Disease name extraction
     disease_patterns = [
         r'DISEASE NAME:\s*(.+?)(?:\n|$)',
         r'Disease(?:\s+)?Name:\s*(.+?)(?:\n|$)',
@@ -303,7 +300,6 @@ def parse_cohere_analysis(analysis_text):
             result['disease_name'] = match.group(1).strip()
             break
     
-    # Disease scientific name
     disease_sci_patterns = [
         r'DISEASE SCIENTIFIC NAME:\s*(.+?)(?:\n|$)',
         r'Pathogen:\s*(.+?)(?:\n|$)',
@@ -317,7 +313,6 @@ def parse_cohere_analysis(analysis_text):
             result['disease_scientific_name'] = match.group(1).strip()
             break
     
-    # Confidence
     confidence_patterns = [
         r'CONFIDENCE:\s*(.+?)(?:\n|$)',
         r'Confidence(?:\s+)?Level:\s*(.+?)(?:\n|$)',
@@ -330,13 +325,11 @@ def parse_cohere_analysis(analysis_text):
             result['confidence'] = match.group(1).strip()
             break
     
-    # Symptoms
     symptoms_section = re.search(r'SYMPTOMS?:?(.*?)(?:\n\n|\n[A-Z]|\Z)', analysis_text, re.IGNORECASE | re.DOTALL)
     if symptoms_section:
         symptoms = re.findall(r'[•\-*\d+\.\s]\s*(.+?)(?:\n|$)', symptoms_section.group(1))
         result['symptoms'] = [s.strip() for s in symptoms if s.strip() and len(s.strip()) > 2]
     
-    # Cause of disease
     cause_patterns = [
         r'CAUSE OF DISEASE:\s*(.+?)(?:\n\n|\n[A-Z]|\Z)',
         r'Cause(?:\s+of)?(?:\s+disease)?:\s*(.+?)(?:\n\n|\n[A-Z]|\Z)',
@@ -349,7 +342,6 @@ def parse_cohere_analysis(analysis_text):
             result['cause_of_disease'] = match.group(1).strip()
             break
     
-    # Disease cycle
     cycle_patterns = [
         r'DISEASE CYCLE:\s*(.+?)(?:\n\n|\n[A-Z]|\Z)',
         r'Disease(?:\s+)?Cycle:\s*(.+?)(?:\n\n|\n[A-Z]|\Z)',
@@ -363,7 +355,6 @@ def parse_cohere_analysis(analysis_text):
             result['disease_cycle'] = match.group(1).strip()
             break
     
-    # Medications
     meds_section = re.search(r'RECOMMENDED MEDICATIONS?:?(.*?)(?:\n\n|\n[A-Z]|\Z)', analysis_text, re.IGNORECASE | re.DOTALL)
     if meds_section:
         meds = re.findall(r'\d+\.\s*(.+?)(?:\n|$)', meds_section.group(1))
@@ -373,25 +364,21 @@ def parse_cohere_analysis(analysis_text):
             meds = re.findall(r'[•\-*]\s*(.+?)(?:\n|$)', meds_section.group(1))
             result['medications'] = [m.strip() for m in meds if m.strip()]
     
-    # Organic alternatives
     organic_section = re.search(r'ORGANIC(?:\s+)?ALTERNATIVES?:?(.*?)(?:\n\n|\n[A-Z]|\Z)', analysis_text, re.IGNORECASE | re.DOTALL)
     if organic_section:
         organic = re.findall(r'[•\-*]\s*(.+?)(?:\n|$)', organic_section.group(1))
         result['organic_alternatives'] = [o.strip() for o in organic if o.strip()]
     
-    # Cultural control
     cultural_section = re.search(r'CULTURAL(?:\s+)?CONTROL(?:\s+)?METHODS?:?(.*?)(?:\n\n|\n[A-Z]|\Z)', analysis_text, re.IGNORECASE | re.DOTALL)
     if cultural_section:
         cultural = re.findall(r'[•\-*]\s*(.+?)(?:\n|$)', cultural_section.group(1))
         result['cultural_control'] = [c.strip() for c in cultural if c.strip()]
     
-    # Prevention tips
     prevention_section = re.search(r'PREVENTION(?:\s+)?TIPS?:?(.*?)(?:\n\n|\n[A-Z]|\Z)', analysis_text, re.IGNORECASE | re.DOTALL)
     if prevention_section:
         tips = re.findall(r'[•\-*]\s*(.+?)(?:\n|$)', prevention_section.group(1))
         result['prevention_tips'] = [t.strip() for t in tips if t.strip()]
     
-    # Environmental conditions
     env_section = re.search(r'ENVIRONMENTAL(?:\s+)?CONDITIONS?:?(.*?)(?:\n\n|\n[A-Z]|\Z)', analysis_text, re.IGNORECASE | re.DOTALL)
     if env_section:
         env_lines = env_section.group(1).strip().split('\n')
@@ -401,7 +388,6 @@ def parse_cohere_analysis(analysis_text):
                 key = key.strip().replace('•', '').replace('-', '').strip()
                 result['environmental_conditions'][key] = value.strip()
     
-    # General guidelines
     guidelines_patterns = [
         r'GENERAL GUIDELINES(?:\s+FOR KENYAN FARMERS)?:\s*(.+?)(?:\n\n|\Z)',
         r'GUIDELINES?:\s*(.+?)(?:\n\n|\Z)',
@@ -414,7 +400,6 @@ def parse_cohere_analysis(analysis_text):
             result['general_guidelines'] = match.group(1).strip()
             break
     
-    # Additional advice
     advice_patterns = [
         r'ADDITIONAL ADVICE:\s*(.+?)(?:\n\n|\Z)',
         r'Additional(?:\s+)?Advice:\s*(.+?)(?:\n\n|\Z)',
@@ -433,12 +418,10 @@ def parse_cohere_analysis(analysis_text):
     
     return result
 
-# ============ DATABASE AUTO-CREATION - FIXED TO CREATE ALL TABLES ============
+# ============ DATABASE AUTO-CREATION - COMPLETE FIX ============
 with app.app_context():
     try:
         inspector = inspect(db.engine)
-        
-        # Check if users table exists
         users_table_exists = inspector.has_table('users')
         
         if not users_table_exists:
@@ -446,9 +429,9 @@ with app.app_context():
             db.create_all()
             print("✅ All database tables created successfully!")
         else:
-            print("✅ Database tables already exist - checking for missing tables...")
+            print("✅ Database tables already exist - checking for missing tables and columns...")
             
-            # List of all tables that should exist
+            # ============ CHECK FOR MISSING TABLES ============
             all_tables = [
                 'users', 'admin_users', 'inventory_items', 'customers', 'sales', 
                 'sale_items', 'communications', 'disease_reports', 'notifications', 
@@ -457,12 +440,10 @@ with app.app_context():
                 'direct_messages', 'faqs', 'orders', 'order_items', 'chat_messages'
             ]
             
-            # Check each table and create if missing
             for table_name in all_tables:
                 if not inspector.has_table(table_name):
                     print(f"📦 Creating missing table: {table_name}")
                     try:
-                        # Create specific tables with proper schema
                         if table_name == 'orders':
                             db.session.execute(text("""
                                 CREATE TABLE IF NOT EXISTS orders (
@@ -499,7 +480,6 @@ with app.app_context():
                                 )
                             """))
                         else:
-                            # For other tables, let SQLAlchemy create them
                             db.create_all()
                             break
                         db.session.commit()
@@ -507,6 +487,70 @@ with app.app_context():
                     except Exception as table_error:
                         print(f"⚠️ Error creating table {table_name}: {table_error}")
                         db.session.rollback()
+            
+            # ============ CHECK FOR MISSING COLUMNS IN REVIEWS TABLE ============
+            if inspector.has_table('reviews'):
+                columns = [col['name'] for col in inspector.get_columns('reviews')]
+                print(f"📊 Reviews table columns: {columns}")
+                
+                # Add agrovet_id column
+                if 'agrovet_id' not in columns:
+                    print("➕ Adding agrovet_id column to reviews table...")
+                    try:
+                        db.session.execute(text("""
+                            ALTER TABLE reviews 
+                            ADD COLUMN agrovet_id INTEGER REFERENCES users(id)
+                        """))
+                        db.session.commit()
+                        print("✅ Added agrovet_id column")
+                    except Exception as e:
+                        print(f"⚠️ Error adding agrovet_id: {e}")
+                        db.session.rollback()
+                
+                # Add order_id column
+                if 'order_id' not in columns:
+                    print("➕ Adding order_id column to reviews table...")
+                    try:
+                        db.session.execute(text("""
+                            ALTER TABLE reviews 
+                            ADD COLUMN order_id INTEGER REFERENCES orders(id)
+                        """))
+                        db.session.commit()
+                        print("✅ Added order_id column")
+                    except Exception as e:
+                        print(f"⚠️ Error adding order_id: {e}")
+                        db.session.rollback()
+                
+                # Add response column
+                if 'response' not in columns:
+                    print("➕ Adding response column to reviews table...")
+                    try:
+                        db.session.execute(text("""
+                            ALTER TABLE reviews 
+                            ADD COLUMN response TEXT
+                        """))
+                        db.session.commit()
+                        print("✅ Added response column")
+                    except Exception as e:
+                        print(f"⚠️ Error adding response: {e}")
+                        db.session.rollback()
+                
+                # Add response_date column
+                if 'response_date' not in columns:
+                    print("➕ Adding response_date column to reviews table...")
+                    try:
+                        db.session.execute(text("""
+                            ALTER TABLE reviews 
+                            ADD COLUMN response_date TIMESTAMP
+                        """))
+                        db.session.commit()
+                        print("✅ Added response_date column")
+                    except Exception as e:
+                        print(f"⚠️ Error adding response_date: {e}")
+                        db.session.rollback()
+            else:
+                print("📦 Reviews table doesn't exist - will be created with all columns")
+                db.create_all()
         
         # ============ FORCE CREATE/UPDATE SUPERADMIN ============
         super_admin_email = 'benedict431@gmail.com'
@@ -562,8 +606,6 @@ except ImportError as e:
 # ============ LOGIN ROUTE ============
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    """Unified login page - handles both regular users and admins"""
-    
     if current_user.is_authenticated:
         if hasattr(current_user, 'is_super_admin'):
             if current_user.is_super_admin:
@@ -585,7 +627,6 @@ def login():
         email = request.form.get('email')
         password = request.form.get('password')
         
-        # Check admin first
         admin = AdminUser.query.filter_by(email=email).first()
         if admin and admin.check_password(password):
             login_user(admin, remember=True)
@@ -598,7 +639,6 @@ def login():
             else:
                 return redirect(url_for('admin.dashboard'))
         
-        # Check regular user
         user = User.query.filter_by(email=email).first()
         if user and user.check_password(password):
             if not user.is_active:
@@ -628,7 +668,6 @@ def login():
     
     return render_template('auth/login.html')
 
-# ============ REGISTER ROUTE ============
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
@@ -677,7 +716,6 @@ def logout():
     flash('You have been logged out successfully.', 'info')
     return redirect(url_for('index'))
 
-# ============ INDEX ============
 @app.route('/')
 def index():
     resp = make_response(render_template('index.html'))
@@ -846,7 +884,6 @@ def farmer_agrovets():
         flash('Access denied', 'error')
         return redirect(url_for('index'))
     
-    # Get all active agrovets
     agrovets = User.query.filter_by(
         user_type='agrovet',
         is_active=True
@@ -927,7 +964,6 @@ def farmer_place_order():
     data = request.get_json()
     
     try:
-        # Create order
         order = Order(
             farmer_id=current_user.id,
             agrovet_id=data['agrovet_id'],
@@ -938,7 +974,6 @@ def farmer_place_order():
         db.session.add(order)
         db.session.flush()
         
-        # Add order items
         for item in data['items']:
             order_item = OrderItem(
                 order_id=order.id,
@@ -949,12 +984,10 @@ def farmer_place_order():
             )
             db.session.add(order_item)
             
-            # Update inventory
             inventory_item = InventoryItem.query.get(item['id'])
             if inventory_item:
                 inventory_item.quantity -= item['quantity']
         
-        # Create notification for agrovet
         notification = Notification(
             user_id=data['agrovet_id'],
             title='📦 New Order Received!',
@@ -1003,7 +1036,6 @@ def farmer_cancel_order(order_id):
     
     order.status = 'cancelled'
     
-    # Restore inventory
     for item in order.items:
         inventory_item = InventoryItem.query.get(item.product_id)
         if inventory_item:
@@ -1025,7 +1057,6 @@ def farmer_write_review(agrovet_id):
     agrovet = User.query.get_or_404(agrovet_id)
     
     if request.method == 'POST':
-        # Check if user has purchased from this agrovet
         has_purchased = Order.query.filter_by(
             farmer_id=current_user.id,
             agrovet_id=agrovet_id,
@@ -1390,10 +1421,8 @@ def agrovet_update_order_status(order_id):
         return jsonify({'error': 'Access denied'}), 403
     
     data = request.get_json()
-    old_status = order.status
     order.status = data['status']
     
-    # Create notification for farmer
     notification = Notification(
         user_id=order.farmer_id,
         title=f'📦 Order #{order.id} Status Updated',
@@ -1819,17 +1848,12 @@ def is_super_admin(user):
 
 @app.template_filter('escapejs')
 def escapejs(value):
-    """Escape string for use in JavaScript"""
     if value is None:
         return ''
     return value.replace("'", "\\'").replace('"', '\\"')
 
 @app.template_filter('timesince')
 def timesince(dt, default="just now"):
-    """
-    Returns string representing "time since" e.g.
-    3 days ago, 5 hours ago etc.
-    """
     if dt is None:
         return ""
     
