@@ -15,26 +15,23 @@ from sqlalchemy import inspect
 db = SQLAlchemy()
 login_manager = LoginManager()
 
-def create_app():
-    """Application factory - creates Flask app instance"""
-    app = Flask(__name__)
-    app.config.from_object(Config)
-    
-    # Initialize extensions with app
-    db.init_app(app)
-    login_manager.init_app(app)
-    login_manager.login_view = 'login'
-    
-    return app
+# ============ CREATE APP ============
+app = Flask(__name__)
+app.config.from_object(Config)
 
-# Create the Flask app
-app = create_app()
+# ============ INITIALIZE EXTENSIONS WITH APP ============
+db.init_app(app)
+login_manager.init_app(app)
+login_manager.login_view = 'login'
+
+# ============ IMPORT MODELS AFTER DB INIT ============
+from models import User, AdminUser, InventoryItem, Customer, Sale, SaleItem, Communication, DiseaseReport, Notification, WeatherData, CommunityPost, PostLike, ReplyLike, ReplyMention, DirectMessage, FAQ, PostTag, CommunityReply, Review
 
 # ============ CONFIGURE COHERE ============
 COHERE_API_KEY = app.config.get('COHERE_API_KEY', '')
 COHERE_MODEL = app.config.get('COHERE_MODEL', 'c4ai-aya-expanse-8b')
 
-# Kenyan agricultural products database - RESTORED
+# ============ KENYAN AGROCHEMICALS DATABASE ============
 KENYAN_AGROCHEMICALS = {
     'fungicides': [
         {'name': 'MILRAZE 720SC', 'manufacturer': 'Syngenta', 'crops': ['tomatoes', 'potatoes', 'vegetables'], 'diseases': ['late blight', 'early blight']},
@@ -61,11 +58,8 @@ KENYAN_AGROCHEMICALS = {
     ]
 }
 
-# ============ IMPORT MODELS AFTER APP CREATION ============
+# ============ DATABASE AUTO-CREATION ============
 with app.app_context():
-    from models import User, AdminUser, InventoryItem, Customer, Sale, SaleItem, Communication, DiseaseReport, Notification, WeatherData, CommunityPost, PostLike, ReplyLike, ReplyMention, DirectMessage, FAQ, PostTag, CommunityReply, Review
-    
-    # ============ DATABASE AUTO-CREATION ============
     try:
         inspector = inspect(db.engine)
         if not inspector.has_table('users'):
@@ -108,21 +102,19 @@ with app.app_context():
         print(f"⚠️ Database initialization warning: {e}")
 
 # ============ REGISTER BLUEPRINTS ============
-with app.app_context():
-    try:
-        from admin_routes import admin_bp
-        from community_routes import community_bp
-        app.register_blueprint(admin_bp)
-        app.register_blueprint(community_bp)
-        print("✅ Blueprints registered successfully")
-    except ImportError as e:
-        print(f"⚠️ Blueprint import error: {e}")
+try:
+    from admin_routes import admin_bp
+    from community_routes import community_bp
+    app.register_blueprint(admin_bp)
+    app.register_blueprint(community_bp)
+    print("✅ Blueprints registered successfully")
+except ImportError as e:
+    print(f"⚠️ Blueprint import error: {e}")
 
 # ============ USER LOADER ============
 @login_manager.user_loader
 def load_user(user_id):
     """Load user by ID - handles both regular users and admin users"""
-    from models import User, AdminUser
     # First try to load regular user
     user = db.session.get(User, int(user_id))
     if user:
@@ -140,7 +132,6 @@ def admin_required(f):
             flash('Please login as admin first', 'error')
             return redirect(url_for('admin.login'))
         
-        from models import AdminUser
         admin_user = AdminUser.query.filter_by(email=current_user.email).first()
         if not admin_user:
             flash('Admin access required', 'error')
@@ -157,7 +148,6 @@ def super_admin_required(f):
             flash('Please login as admin first', 'error')
             return redirect(url_for('admin.login'))
         
-        from models import AdminUser
         admin_user = AdminUser.query.filter_by(email=current_user.email).first()
         if not admin_user or not admin_user.is_super_admin:
             flash('Super admin access required', 'error')
@@ -170,7 +160,7 @@ def allowed_file(filename):
     """Check if file extension is allowed"""
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
 
-# ============ COHERE DISEASE ANALYSIS - FULL VERSION RESTORED ============
+# ============ COHERE DISEASE ANALYSIS - FULL VERSION ============
 def analyze_plant_with_cohere(image_description, user_description=""):
     """Enhanced plant disease analysis with Cohere API - Identifies plant type and diseases"""
     
@@ -197,6 +187,7 @@ def analyze_plant_with_cohere(image_description, user_description=""):
     # Check if Cohere API key is configured
     if not COHERE_API_KEY or COHERE_API_KEY == '':
         default_result['additional_advice'] = 'Cohere API key is not configured. Please set COHERE_API_KEY in your environment variables.'
+        default_result['raw_response'] = 'API Key Missing'
         return default_result
     
     try:
@@ -552,8 +543,6 @@ def login():
         email = request.form.get('email')
         password = request.form.get('password')
         
-        from models import AdminUser, User
-        
         # First check if it's an admin user
         admin = AdminUser.query.filter_by(email=email).first()
         if admin and admin.check_password(password):
@@ -612,8 +601,6 @@ def register():
         user_type = request.form.get('user_type')
         phone_number = request.form.get('phone_number')
         location = request.form.get('location')
-        
-        from models import User
         
         # Check if user already exists
         if User.query.filter_by(email=email).first():
@@ -687,8 +674,6 @@ def farmer_dashboard():
         flash('Access denied', 'error')
         return redirect(url_for('index'))
     
-    from models import DiseaseReport, Notification
-    
     # Get farmer's disease reports - handle case when no reports exist
     disease_reports = DiseaseReport.query.filter_by(farmer_id=current_user.id)\
         .order_by(DiseaseReport.created_at.desc())\
@@ -729,8 +714,6 @@ def detect_disease():
             
         if file and allowed_file(file.filename):
             try:
-                from models import DiseaseReport
-                
                 # Create uploads directory if it doesn't exist
                 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
                 
@@ -843,8 +826,6 @@ def farmer_agrovets():
         flash('Access denied', 'error')
         return redirect(url_for('index'))
     
-    from models import User
-    
     # Get all active agrovets
     agrovets = User.query.filter_by(
         user_type='agrovet',
@@ -900,7 +881,7 @@ def generate_farming_recommendations(weather, forecast):
     
     return recommendations
 
-# ============ AGROVET ROUTES - FULLY RESTORED ============
+# ============ AGROVET ROUTES - FULLY PRESERVED ============
 @app.route('/agrovet/dashboard')
 @login_required
 def agrovet_dashboard():
@@ -908,8 +889,6 @@ def agrovet_dashboard():
     if current_user.user_type != 'agrovet':
         flash('Access denied', 'error')
         return redirect(url_for('index'))
-    
-    from models import InventoryItem, Customer, Sale, Notification
     
     # Get statistics
     total_products = InventoryItem.query.filter_by(agrovet_id=current_user.id).count()
@@ -951,8 +930,6 @@ def agrovet_inventory():
         flash('Access denied', 'error')
         return redirect(url_for('index'))
     
-    from models import InventoryItem
-    
     items = InventoryItem.query.filter_by(agrovet_id=current_user.id).all()
     return render_template('agrovet/inventory.html', items=items)
 
@@ -963,8 +940,6 @@ def add_inventory():
     if current_user.user_type != 'agrovet':
         flash('Access denied', 'error')
         return redirect(url_for('index'))
-    
-    from models import InventoryItem
     
     if request.method == 'POST':
         item = InventoryItem(
@@ -997,8 +972,6 @@ def edit_inventory(item_id):
         flash('Access denied', 'error')
         return redirect(url_for('index'))
     
-    from models import InventoryItem
-    
     item = InventoryItem.query.get_or_404(item_id)
     
     if item.agrovet_id != current_user.id:
@@ -1030,8 +1003,6 @@ def delete_inventory(item_id):
     if current_user.user_type != 'agrovet':
         return jsonify({'error': 'Access denied'}), 403
     
-    from models import InventoryItem
-    
     item = InventoryItem.query.get_or_404(item_id)
     
     if item.agrovet_id != current_user.id:
@@ -1050,8 +1021,6 @@ def agrovet_pos():
         flash('Access denied', 'error')
         return redirect(url_for('index'))
     
-    from models import InventoryItem, Customer
-    
     items = InventoryItem.query.filter_by(agrovet_id=current_user.id)\
         .filter(InventoryItem.quantity > 0).all()
     customers = Customer.query.filter_by(agrovet_id=current_user.id).all()
@@ -1064,8 +1033,6 @@ def pos_checkout():
     """Process POS checkout"""
     if current_user.user_type != 'agrovet':
         return jsonify({'error': 'Access denied'}), 403
-    
-    from models import InventoryItem, Customer, Sale, SaleItem
     
     data = request.get_json()
     cart_items = data.get('items', [])
@@ -1136,8 +1103,6 @@ def agrovet_crm():
         flash('Access denied', 'error')
         return redirect(url_for('index'))
     
-    from models import Customer
-    
     customers = Customer.query.filter_by(agrovet_id=current_user.id)\
         .order_by(Customer.created_at.desc())\
         .all()
@@ -1151,8 +1116,6 @@ def add_customer():
     if current_user.user_type != 'agrovet':
         flash('Access denied', 'error')
         return redirect(url_for('index'))
-    
-    from models import Customer
     
     if request.method == 'POST':
         customer = Customer(
@@ -1181,8 +1144,6 @@ def view_customer(customer_id):
         flash('Access denied', 'error')
         return redirect(url_for('index'))
     
-    from models import Customer, Communication, Sale
-    
     customer = Customer.query.get_or_404(customer_id)
     
     if customer.agrovet_id != current_user.id:
@@ -1205,8 +1166,6 @@ def add_communication(customer_id):
     """Add communication log for customer"""
     if current_user.user_type != 'agrovet':
         return jsonify({'error': 'Access denied'}), 403
-    
-    from models import Customer, Communication
     
     customer = Customer.query.get_or_404(customer_id)
     
@@ -1235,8 +1194,6 @@ def officer_dashboard():
     if current_user.user_type != 'extension_officer':
         flash('Access denied', 'error')
         return redirect(url_for('index'))
-    
-    from models import DiseaseReport, User
     
     # Get all disease reports in the area
     disease_reports = DiseaseReport.query\
@@ -1268,8 +1225,6 @@ def institution_dashboard():
 @super_admin_required
 def super_admin_dashboard():
     """Super admin dashboard with full system control"""
-    from models import User, AdminUser, DiseaseReport, CommunityPost
-    
     total_users = User.query.count()
     total_admins = AdminUser.query.count()
     total_disease_reports = DiseaseReport.query.count()
@@ -1293,8 +1248,6 @@ def super_admin_dashboard():
 @super_admin_required
 def manage_all_users():
     """Super admin user management"""
-    from models import User
-    
     if request.method == 'POST':
         user_id = request.form.get('user_id')
         action = request.form.get('action')
@@ -1329,8 +1282,6 @@ def manage_all_users():
 @super_admin_required
 def manage_admins():
     """Super admin management of other admins"""
-    from models import AdminUser
-    
     if request.method == 'POST':
         email = request.form.get('email')
         password = request.form.get('password')
@@ -1361,8 +1312,6 @@ def manage_admins():
 @super_admin_required
 def toggle_user_status(user_id):
     """Toggle user active status"""
-    from models import User
-    
     user = User.query.get_or_404(user_id)
     user.is_active = not user.is_active
     db.session.commit()
@@ -1374,8 +1323,6 @@ def toggle_user_status(user_id):
 @super_admin_required
 def impersonate_user(user_id):
     """Impersonate a user (super admin only)"""
-    from models import User
-    
     user = User.query.get_or_404(user_id)
     login_user(user)
     flash(f'You are now logged in as {user.full_name}', 'success')
@@ -1491,8 +1438,6 @@ Feel free to call or send a message on WhatsApp! 🧑‍🌾"""
 @login_required
 def mark_notification_read(notification_id):
     """Mark notification as read"""
-    from models import Notification
-    
     notification = Notification.query.get_or_404(notification_id)
     
     if notification.user_id != current_user.id:
@@ -1507,9 +1452,6 @@ def mark_notification_read(notification_id):
 @app.route('/sitemap.xml')
 def sitemap():
     """Generate XML sitemap for Google indexing"""
-    from flask import make_response
-    from datetime import datetime
-    
     urls = []
     
     # Static pages
@@ -1526,7 +1468,6 @@ def sitemap():
     
     # Add community posts
     try:
-        from models import CommunityPost
         posts = CommunityPost.query.filter_by(is_public=True).all()
         for post in posts:
             urls.append({
@@ -1573,7 +1514,6 @@ def is_admin(user):
     """Check if user is an admin"""
     if not user.is_authenticated:
         return False
-    from models import AdminUser
     admin = AdminUser.query.filter_by(email=user.email).first()
     return admin is not None
 
@@ -1582,7 +1522,6 @@ def is_super_admin(user):
     """Check if user is a super admin"""
     if not user.is_authenticated:
         return False
-    from models import AdminUser
     admin = AdminUser.query.filter_by(email=user.email).first()
     return admin is not None and admin.is_super_admin
 
