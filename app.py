@@ -1430,7 +1430,241 @@ Feel free to call or send a message on WhatsApp! 🧑‍🌾"""
             'error': f'BenFarm is offline. Please reach out to Benedict Odhiambo at +254713593573 for immediate assistance.',
             'contact': '+254713593573'
         })
+# ============ FARMER PRODUCT BROWSING & ORDERS ============
+@app.route('/farmer/agrovet/<int:agrovet_id>/products')
+@login_required
+def farmer_agrovet_products(agrovet_id):
+    """Browse products from a specific agrovet"""
+    if current_user.user_type != 'farmer':
+        flash('Access denied', 'error')
+        return redirect(url_for('index'))
+    
+    agrovet = User.query.get_or_404(agrovet_id)
+    if agrovet.user_type != 'agrovet':
+        flash('Invalid agrovet', 'error')
+        return redirect(url_for('farmer_agrovets'))
+    
+    products = InventoryItem.query.filter_by(
+        agrovet_id=agrovet_id,
+        quantity > 0
+    ).all()
+    
+    return render_template('agrovet/products.html', 
+                         agrovet=agrovet, 
+                         products=products)
 
+@app.route('/farmer/place-order', methods=['POST'])
+@login_required
+def farmer_place_order():
+    """Place an order with an agrovet"""
+    if current_user.user_type != 'farmer':
+        return jsonify({'error': 'Access denied'}), 403
+    
+    data = request.get_json()
+    
+    try:
+        # Create order (you'll need to create an Order model)
+        order = Order(
+            farmer_id=current_user.id,
+            agrovet_id=data['agrovet_id'],
+            total=data['total'],
+            notes=data.get('notes', ''),
+            status='pending'
+        )
+        db.session.add(order)
+        db.session.flush()
+        
+        # Add order items
+        for item in data['items']:
+            order_item = OrderItem(
+                order_id=order.id,
+                product_id=item['id'],
+                product_name=item['name'],
+                quantity=item['quantity'],
+                price=item['price']
+            )
+            db.session.add(order_item)
+        
+        # Create notification for agrovet
+        notification = Notification(
+            user_id=data['agrovet_id'],
+            title='New Order Received!',
+            message=f'New order #{order.id} from {current_user.full_name}',
+            notification_type='order',
+            link=f'/agrovet/orders/{order.id}'
+        )
+        db.session.add(notification)
+        
+        db.session.commit()
+        
+        return jsonify({'success': True, 'order_id': order.id})
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/farmer/orders')
+@login_required
+def farmer_orders():
+    """View farmer's orders"""
+    if current_user.user_type != 'farmer':
+        flash('Access denied', 'error')
+        return redirect(url_for('index'))
+    
+    orders = Order.query.filter_by(farmer_id=current_user.id)\
+        .order_by(Order.created_at.desc())\
+        .all()
+    
+    return render_template('farmer/orders.html', orders=orders)
+
+@app.route('/farmer/orders/<int:order_id>/cancel', methods=['POST'])
+@login_required
+def farmer_cancel_order(order_id):
+    """Cancel an order"""
+    if current_user.user_type != 'farmer':
+        return jsonify({'error': 'Access denied'}), 403
+    
+    order = Order.query.get_or_404(order_id)
+    
+    if order.farmer_id != current_user.id:
+        return jsonify({'error': 'Access denied'}), 403
+    
+    if order.status not in ['pending', 'confirmed']:
+        return jsonify({'error': 'Order cannot be cancelled'}), 400
+    
+    order.status = 'cancelled'
+    db.session.commit()
+    
+    return jsonify({'success': True})
+
+# ============ AGROVET ORDER MANAGEMENT ============
+@app.route('/agrovet/orders')
+@login_required
+def agrovet_orders():
+    """View agrovet's orders"""
+    if current_user.user_type != 'agrovet':
+        flash('Access denied', 'error')
+        return redirect(url_for('index'))
+    
+    orders = Order.query.filter_by(agrovet_id=current_user.id)\
+        .order_by(Order.created_at.desc())\
+        .all()
+    
+    return render_template('agrovet/orders.html', orders=orders)
+
+@app.route('/agrovet/orders/<int:order_id>/status', methods=['POST'])
+@login_required
+def agrovet_update_order_status(order_id):
+    """Update order status"""
+    if current_user.user_type != 'agrovet':
+        return jsonify({'error': 'Access denied'}), 403
+    
+    order = Order.query.get_or_404(order_id)
+    
+    if order.agrovet_id != current_user.id:
+        return jsonify({'error': 'Access denied'}), 403
+    
+    data = request.get_json()
+    order.status = data['status']
+    
+    # Create notification for farmer
+    notification = Notification(
+        user_id=order.farmer_id,
+        title=f'Order #{order.id} Status Updated',
+        message=f'Your order is now: {order.status}',
+        notification_type='order',
+        link=f'/farmer/orders/{order.id}'
+    )
+    db.session.add(notification)
+    
+    db.session.commit()
+    
+    return jsonify({'success': True})
+
+# ============ REVIEW SYSTEM ============
+@app.route('/farmer/write-review/<int:agrovet_id>', methods=['GET', 'POST'])
+@login_required
+def farmer_write_review(agrovet_id):
+    """Write a review for an agrovet"""
+    if current_user.user_type != 'farmer':
+        flash('Access denied', 'error')
+        return redirect(url_for('index'))
+    
+    agrovet = User.query.get_or_404(agrovet_id)
+    
+    if request.method == 'POST':
+        review = Review(
+            user_id=current_user.id,
+            agrovet_id=agrovet_id,
+            rating=request.form.get('rating'),
+            title=request.form.get('title'),
+            content=request.form.get('content'),
+            verified_purchase=request.form.get('verified_purchase') == 'on'
+        )
+        db.session.add(review)
+        db.session.commit()
+        
+        flash('Thank you for your review!', 'success')
+        return redirect(url_for('farmer_agrovet_reviews', agrovet_id=agrovet_id))
+    
+    return render_template('agrovet/reviews.html', agrovet=agrovet)
+
+@app.route('/agrovet/reviews')
+@login_required
+def agrovet_reviews():
+    """View agrovet's reviews"""
+    if current_user.user_type != 'agrovet':
+        flash('Access denied', 'error')
+        return redirect(url_for('index'))
+    
+    reviews = Review.query.filter_by(agrovet_id=current_user.id)\
+        .order_by(Review.created_at.desc())\
+        .all()
+    
+    stats = current_user.get_review_stats()
+    
+    return render_template('agrovet/reviews.html', 
+                         agrovet=current_user,
+                         reviews=reviews,
+                         stats=stats)
+
+@app.route('/agrovet/reviews/<int:review_id>/respond', methods=['POST'])
+@login_required
+def agrovet_respond_review(review_id):
+    """Respond to a customer review"""
+    if current_user.user_type != 'agrovet':
+        flash('Access denied', 'error')
+        return redirect(url_for('index'))
+    
+    review = Review.query.get_or_404(review_id)
+    
+    if review.agrovet_id != current_user.id:
+        flash('Access denied', 'error')
+        return redirect(url_for('index'))
+    
+    review.response = request.form.get('response')
+    review.response_date = datetime.utcnow()
+    db.session.commit()
+    
+    flash('Your response has been posted', 'success')
+    return redirect(url_for('agrovet_reviews'))
+
+@app.route('/review/<int:review_id>/helpful', methods=['POST'])
+@login_required
+def mark_review_helpful(review_id):
+    """Mark a review as helpful"""
+    review = Review.query.get_or_404(review_id)
+    review.helpful_count = (review.helpful_count or 0) + 1
+    db.session.commit()
+    
+    return jsonify({'success': True})
+
+# ============ COMMUNITY CHAT ============
+@app.route('/community/chat')
+@login_required
+def community_chat():
+    """Community chat room"""
+    return render_template('community/chat.html')
 # ============ NOTIFICATIONS ============
 @app.route('/notifications/mark-read/<int:notification_id>', methods=['POST'])
 @login_required
