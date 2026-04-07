@@ -469,12 +469,23 @@ def not_found_error(error):
 
 # ===== CONTEXT PROCESSORS =====
 
+from flask_login import current_user  # Add this import at the top with your other imports
+
+# Then add/modify context processors:
 @app.context_processor
 def inject_available_riders():
     if 'user_id' in session:
         available_riders = User.query.filter_by(role='rider', is_online=True).limit(5).all()
         return dict(available_riders=available_riders)
     return dict(available_riders=[])
+
+@app.context_processor
+def inject_current_user():
+    """Make current_user available in all templates"""
+    if 'user_id' in session:
+        user = User.query.get(session['user_id'])
+        return dict(current_user=user)
+    return dict(current_user=None)
 
 # ===== AUTHENTICATION ROUTES =====
 
